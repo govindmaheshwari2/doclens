@@ -1,6 +1,6 @@
 name: doclens
 description: "Document scanner for Flutter with native edge detection and a 100% Flutter UI you fully control, plus a one-line escape hatch to the OS-native scanner."
-version: 0.1.0
+version: 0.0.1
 homepage: https://github.com/govindmaheshwari2/doclens
 repository: https://github.com/govindmaheshwari2/doclens
 issue_tracker: https://github.com/govindmaheshwari2/doclens/issues
@@ -13,7 +13,7 @@ topics:
 
 environment:
   sdk: ^3.4.0
-  flutter: '>=3.16.0'
+  flutter: ">=3.16.0"
 
 dependencies:
   flutter:
