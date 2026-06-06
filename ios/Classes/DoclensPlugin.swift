@@ -74,7 +74,7 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
             result(nil)
         case "scanWithNativeUI":
             let args = call.arguments as? [String: Any] ?? [:]
-            let quality = (args["jpegQuality"] as? Int) ?? 92
+            let quality = (args["jpegQuality"] as? Int) ?? 100
             nativeUIScanner.present(jpegQuality: quality, result: result)
         default:
             result(FlutterMethodNotImplemented)
@@ -116,7 +116,7 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
                                 message: "Invalid warp args", details: nil))
             return
         }
-        let jpegQuality = (args["jpegQuality"] as? Int) ?? 92
+        let jpegQuality = (args["jpegQuality"] as? Int) ?? 100
         let quad = Quad.fromMap(quadMap)
         DispatchQueue.global(qos: .userInitiated).async {
             do {

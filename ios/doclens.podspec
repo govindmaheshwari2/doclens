@@ -5,9 +5,9 @@ Pod::Spec.new do |s|
   s.description      = <<-DESC
 Native-grade document edge detection (Apple Vision) + perspective warp, paired with fully customizable Flutter UI.
                        DESC
-  s.homepage         = 'https://github.com/yourname/doclens'
+  s.homepage         = 'https://github.com/govindmaheshwari2/doclens'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'doclens' => 'noreply@doclens.dev' }
+  s.author           = { 'Govind Maheshwari' => 'https://github.com/govindmaheshwari2' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'

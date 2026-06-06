@@ -114,7 +114,7 @@ class DoclensPlugin :
             activity = activity,
             pageLimit = (call.argument<Int>("pageLimit") ?: 100),
             allowGalleryImport = call.argument<Boolean>("allowGalleryImport") ?: false,
-            jpegQuality = call.argument<Int>("jpegQuality") ?: 92,
+            jpegQuality = call.argument<Int>("jpegQuality") ?: 100,
             result = result,
         )
     }
@@ -122,7 +122,7 @@ class DoclensPlugin :
     private fun handleWarp(call: MethodCall, result: MethodChannel.Result) {
         val rawPath = call.argument<String>("rawImagePath")
         val quadMap = call.argument<Map<String, Any?>>("quad")
-        val quality = call.argument<Int>("jpegQuality") ?: 92
+        val quality = call.argument<Int>("jpegQuality") ?: 100
         if (rawPath == null || quadMap == null) {
             result.error("capture_failed", "Invalid warp args", null); return
         }

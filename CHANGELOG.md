@@ -2,42 +2,83 @@
 
 Initial release.
 
-**Custom-UI scanner (the package's value proposition)**
+**Drop-in scanner**
 
-- Live camera preview as a Flutter `Texture` (no platform views).
-- Native edge detection on iOS — `VNDetectDocumentSegmentationRequest`
-  (the Core ML detector used by VisionKit) on iOS 15+, with a docs-tuned
+- `DoclensScreen.scan(context)` — one-line, full-screen scanner route
+  with live preview, auto-capture, and a built-in review screen
+  (retake / edit corners / accept). Returns `Future<ScanResult?>`.
+- Every visible string and behaviour knob (auto-capture timing, JPEG
+  quality, flash mode, lens, accent colours, labels, edit-corners
+  toggle) exposed as a top-level parameter with rich dartdoc.
+
+**Custom UI**
+
+- `DoclensView` Flutter widget rendering a `Texture`-backed live
+  camera preview plus your overlay / shutter / flash button builders.
+  Every slot accepts `null` to render nothing, a static default for
+  quick start, or a custom widget.
+- `DoclensController extends ChangeNotifier` owning the session.
+  Streams: `quadStream`, `statusStream`, `autoCaptureStream`,
+  `lowLightStream`, `previewSizeStream`. Methods: `initialize`,
+  `capture`, `warpImage`, `focusAt`, `setFlashMode`, `cycleFlashMode`,
+  `switchCamera`, `pause`, `resume`, `dispose`.
+- `QuadOverlay` family of pre-built overlay widgets with named
+  constructors: `outline`, `filled`, `corners`, `cornersFilled`,
+  `dots`, `dotsLine`, `glow`. Status-driven colour follows
+  `accent` / `warning`. The drop-in `DoclensScreen` exposes an
+  `overlayStyle: QuadOverlayStyle` parameter so consumers can switch
+  the look without writing a builder.
+
+**Native detection pipeline**
+
+- iOS — `VNDetectDocumentSegmentationRequest` (the Core ML detector
+  used by VisionKit) on iOS 15+, with a docs-tuned
   `VNDetectRectanglesRequest` fallback on iOS 13/14.
-- Native edge detection on Android — pure-Kotlin Sobel +
-  connected-components + convex-hull approximation (no OpenCV, no ML
-  Kit on the live-preview path).
-- Streams normalized `Quad` to Dart at a configurable throttle rate
+- Android — pure-Kotlin Sobel + connected-components + convex-hull
+  approximation on CameraX (no OpenCV, no on-device ML model bundling
+  on the live-preview path).
+- Streams normalised `Quad` to Dart at a configurable throttle rate
   (default 15 Hz).
-- Two-stage auto-capture with confirmation phase
-  (`DetectionStatus.confirming`) — mirrors VisionKit's "hold still" cue,
+- Two-stage auto-capture with `DetectionStatus.confirming` phase,
   configurable thresholds and durations.
+
+**Focus**
+
+- Continuous autofocus enabled by default on both platforms (iOS
+  `.continuousAutoFocus` + near-distance hint; Android CameraX
+  `CONTROL_AF_MODE_CONTINUOUS_PICTURE`).
+- Tap-to-focus on the preview triggers a one-shot focus + auto-exposure
+  at the tap point, with a focus-reticle animation. Reverts to
+  continuous AF after ~3 seconds. Programmatic access via
+  `controller.focusAt(Offset)`.
+
+**Capture + warp**
+
 - Full-resolution still capture with native perspective warp
   (`CIPerspectiveCorrection` on iOS, `Matrix.setPolyToPoly` on Android),
   EXIF orientation baked into pixel layout.
-- Graceful fallback when warp fails — `ScanResult.warpError` is surfaced,
-  raw image and quad still returned.
-- `EditCornersScreen` with draggable handles, customizable builders, and
-  re-warp callback.
+- Graceful fallback when warp fails — `ScanResult.warpError` is
+  surfaced, raw image and quad still returned.
+- `EditCornersScreen` with draggable handles, customisable builders,
+  and re-warp callback.
+
+**Quality of life**
+
 - Median-of-N corner smoothing (`QuadSmoother`) to kill single-frame
   jitter.
-- Flash / torch toggle, camera switching, pause/resume on app lifecycle.
+- Flash / torch toggle, camera switching, pause/resume on app
+  lifecycle.
 - Low-light detection emitted on the status stream.
 - Preview-size event so the overlay coordinate space always matches the
   rendered preview pixels.
-- 100% builder-driven UI: every overlay and button is yours to style.
 - `ScannerConfig` with feature flags for auto-capture timing, smoothing,
-  detection throttle, JPEG quality, flash mode, lens, lifecycle, and
-  telemetry — all with sensible defaults.
+  detection throttle, JPEG quality, flash mode, lens, lifecycle,
+  telemetry, tap-to-focus, pinch-to-zoom — all with sensible defaults.
 - Typed exceptions: `ScannerPermissionException`,
   `ScannerUnavailableException`, `ScannerInitializationException`,
   `ScannerCaptureException`.
 
-**Native-UI scanner (one-line opt-in)**
+**OS-native scanner (one-line opt-in)**
 
 - `scanWithNativeUI()` launches the OS-native scanner UI:
   `VNDocumentCameraViewController` on iOS,
@@ -51,6 +92,6 @@ Initial release.
 
 - Pure-Dart unit tests for `Quad`, `StabilityTracker`,
   `StatusClassifier`, and `QuadSmoother`.
-- `docs/architecture.md`, `docs/decisions.md` (every non-obvious
-  decision cited against Apple / Google docs), `docs/migration.md`,
-  `docs/tuning.md`, `docs/verification/`.
+- `doc/architecture.md` with the Dart ↔ native pipeline diagram.
+- `doc/decisions.md` — every non-obvious design choice cited against
+  Apple / Google docs.

@@ -1,8 +1,9 @@
 import 'dart:io';
 
+import 'package:doclens/doclens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:doclens/doclens.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'styles/branded_style.dart';
 import 'styles/native_os_style.dart';
@@ -894,21 +895,60 @@ class _ShowroomFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(height: 1, color: _kRule),
         const SizedBox(height: 22),
         Text(
-          'iOS — Vision document segmentation (15+), with rectangle\n'
-          'detection fallback on older devices.\n\n'
-          'Android — CameraX with a native Kotlin Sobel pipeline.',
+          'Govind Maheshwari',
           style: _mono(
             size: 11,
             color: _kInkDim,
             height: 1.7,
           ),
         ),
+        const SizedBox(height: 10),
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _FooterLink(
+              label: 'github',
+              url: 'https://github.com/govindmaheshwari2',
+            ),
+            _FooterLink(
+              label: 'email',
+              url: 'mailto:govindmh14@gmail.com',
+            ),
+            _FooterLink(
+              label: 'linkedin',
+              url: 'https://www.linkedin.com/in/govind-maheshwari-214a20190/',
+            ),
+          ],
+        ),
       ],
+    );
+  }
+}
+
+class _FooterLink extends StatelessWidget {
+  const _FooterLink({required this.label, required this.url});
+
+  final String label;
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () =>
+          launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+      child: Text(
+        label,
+        style: _mono(
+          size: 11,
+          color: _kRust,
+          height: 1.7,
+        ).copyWith(
+            decoration: TextDecoration.underline, decorationColor: _kRust),
+      ),
     );
   }
 }

@@ -115,7 +115,7 @@ class ScannerConfig {
     this.quadSmoothingWindow = 5,
     // Capture
     this.enablePerspectiveWarp = true,
-    this.jpegQuality = 92,
+    this.jpegQuality = 100,
     this.outputFormat = ImageFormat.jpeg,
     this.captureResolution = Resolution.high,
     // Camera
@@ -138,7 +138,14 @@ class ScannerConfig {
         assert(autoCaptureCornerThreshold >= 0);
 
   // Detection
+
+  /// Master switch for the per-frame edge-detection pipeline. When
+  /// `false`, no quad events are emitted and auto-capture cannot fire.
   final bool enableLiveDetection;
+
+  /// When `true`, the controller fires the shutter automatically once
+  /// the detected quad has been stable long enough (subject to the
+  /// confirmation phase if `enableAutoCaptureConfirmation` is `true`).
   final bool enableAutoCapture;
 
   /// How long the document quad must hold "still" (per
@@ -181,27 +188,83 @@ class ScannerConfig {
 
   // Capture
   final bool enablePerspectiveWarp;
+  /// JPEG compression quality `1`–`100` for both raw and cropped outputs
+  /// written to disk. Defaults to **100** — best for OCR or
+  /// re-processing pipelines that don't want lossy compression. Drop to
+  /// `~92` if disk size matters (visually indistinguishable from 100
+  /// and ~3× smaller).
   final int jpegQuality;
+
+  /// Output container format for captures. JPEG is the only fully
+  /// supported value today; PNG is reserved for a future release.
   final ImageFormat outputFormat;
+
+  /// Capture resolution hint passed to the platform's photo output.
+  /// `Resolution.auto` lets the OS pick; `high` / `max` raise the
+  /// preset where supported.
   final Resolution captureResolution;
 
   // Camera
+
+  /// Initial flash / torch mode the camera starts in.
   final FlashMode initialFlashMode;
+
+  /// Which lens the camera starts on. Use `CameraLens.front` for
+  /// selfie-mode scanning of whiteboards, etc.
   final CameraLens initialLens;
+
+  /// Hint that the host UI may expose a camera-switch control. Currently
+  /// informational only — the package does not render a switch button
+  /// itself; consumers wire it via `controller.switchCamera()`.
   final bool enableCameraSwitch;
+
+  /// When `true`, tapping the preview triggers a one-shot focus +
+  /// auto-exposure at that location and renders a brief focus reticle.
+  /// The camera reverts to continuous autofocus after ~3 s.
+  /// Continuous autofocus stays on regardless of this flag — disabling
+  /// only suppresses the tap gesture and the programmatic
+  /// `DoclensController.focusAt(...)` call.
   final bool enableTapToFocus;
+
+  /// When `true`, pinching the preview drives the camera's zoom level
+  /// (where supported by the OS). Currently a hint only — the native
+  /// pipeline does not yet implement pinch handling; reserved for a
+  /// future release.
   final bool enablePinchToZoom;
 
   // Status stream
+
+  /// When `true`, native estimates a low-light flag from frame luma and
+  /// emits it on `DoclensController.lowLightStream`.
   final bool enableLowLightDetection;
+
+  /// When `true`, the controller emits coarse `DetectionStatus` values
+  /// (`searching`, `tooFar`, `tooClose`, `tilted`, `aligned`,
+  /// `confirming`, `noPaper`) on `statusStream` derived from the
+  /// detected quad.
   final bool enableStabilityStatus;
 
   // Lifecycle
+
+  /// When `true`, `DoclensView` calls `controller.pause()` when the host
+  /// app moves to the background. Saves battery and avoids holding the
+  /// camera while another app uses it.
   final bool pauseOnBackground;
+
+  /// When `true`, `DoclensView` calls `controller.resume()` when the
+  /// host app comes back to the foreground.
   final bool resumeOnForeground;
 
   // Diagnostics
+
+  /// When `true`, `DoclensView` paints its `debugOverlayBuilder` slot.
+  /// Builder is responsible for rendering FPS / current quad / etc. —
+  /// the package does not render anything itself.
   final bool enableDebugOverlay;
+
+  /// When `true`, the controller writes auto-capture state-machine
+  /// transitions to `debugPrint` (prefix `[fnds]`). Useful when a
+  /// scanner appears stuck and you need to see which gate is failing.
   final bool enableTelemetryLogging;
 
   Map<String, dynamic> toMap() => {

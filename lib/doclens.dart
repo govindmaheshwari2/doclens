@@ -12,3 +12,4 @@ export 'src/status_classifier.dart';
 export 'src/widgets/doclens_screen.dart';
 export 'src/widgets/doclens_view.dart';
 export 'src/widgets/edit_corners_screen.dart';
+export 'src/widgets/quad_overlay.dart';

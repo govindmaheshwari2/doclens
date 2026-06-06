@@ -1,8 +1,7 @@
 # doclens
 
 A document scanner for Flutter with native edge detection and **100%
-Flutter UI you fully control** — plus a one-line escape hatch to the
-OS-native scanner UI when you don't need custom branding.
+Flutter UI you fully control**.
 
 Detection runs natively. On iOS 15+ it uses Apple Vision's
 [`VNDetectDocumentSegmentationRequest`](https://developer.apple.com/documentation/vision/vndetectdocumentsegmentationrequest)
@@ -12,30 +11,47 @@ Sobel + connected-components + convex-hull pipeline. The detected
 4-corner quad is streamed to Dart every frame. The preview is a Flutter
 `Texture`. Every overlay, button, and label is a widget you build.
 
-## Two ways to scan
+## Three ways to scan
 
-### 1. Custom UI (the default value proposition)
+### 1. Drop-in — one line of code
 
-You build the scanner screen in Flutter widgets; the package handles the
-camera, detection, auto-capture timing, and perspective warp.
+`DoclensScreen` is a polished, opinionated scanner screen owned by the
+package. It runs the live preview, auto-captures, and presents a built-in
+review screen with retake / edit-corners / accept.
 
 ```dart
-class MyScanner extends StatefulWidget {
-  @override State<MyScanner> createState() => _MyScannerState();
-}
+final ScanResult? result = await DoclensScreen.scan(context);
+if (result == null) return;            // user cancelled
+final croppedJpegPath = result.croppedImagePath;
+```
 
+Customise without dropping down to builders:
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  accentColor: Theme.of(context).colorScheme.primary,
+  autoCaptureStabilityDuration: const Duration(milliseconds: 600),
+  jpegQuality: 95,
+  useLabel: 'Save',
+);
+```
+
+Every `DoclensScreen` parameter has rich dartdoc explaining the default,
+the trade-off, and when to override.
+
+### 2. Custom UI — full control with `DoclensView`
+
+When you want a fully branded scanner, mount the `DoclensView` widget
+yourself, supply your own builders for the overlay / shutter / flash
+button, and own the result flow.
+
+```dart
 class _MyScannerState extends State<MyScanner> {
   final controller = DoclensController();
 
-  @override void initState() {
-    super.initState();
-    controller.initialize();
-  }
-
-  @override void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
+  @override void initState() { super.initState(); controller.initialize(); }
+  @override void dispose()    { controller.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -45,21 +61,68 @@ class _MyScannerState extends State<MyScanner> {
       captureButtonBuilder: DoclensView.defaultCaptureButton,
       flashButtonBuilder: DoclensView.defaultFlashButton,
       onCapture: (ScanResult result) {
-        // result.croppedImagePath  — perspective-warped JPEG path
-        // result.rawImagePath      — full uncropped JPEG path
+        // result.croppedImagePath  — perspective-warped JPEG
+        // result.rawImagePath      — full uncropped JPEG
         // result.detectedQuad      — Quad in raw image pixel coords
         // result.rawImageSize      — pixel size of the raw image
-        // result.warpError         — non-null if the warp itself failed
+        // result.warpError         — non-null if the warp failed
       },
     );
   }
 }
 ```
 
-### 2. Native OS scanner
+Pass `null` to any builder slot to render nothing, the static defaults
+for a quick start, or your own widget for full control.
 
-When you want Apple's / Google's full-screen native scanner UI without
-building your own, call:
+### Quad overlay family
+
+For the most common need — "I just want a different shape on the
+detected quad" — the package ships a family of pre-built overlays as
+named constructors on `QuadOverlay`:
+
+| Variant | Look |
+|---|---|
+| `QuadOverlay.outline` | Just a stroked polygon |
+| `QuadOverlay.filled` | Stroked polygon + tinted fill (the package default) |
+| `QuadOverlay.corners` | Four corner brackets, no connecting lines |
+| `QuadOverlay.cornersFilled` | Corner brackets + tinted fill polygon |
+| `QuadOverlay.dots` | Four filled dots at the corners |
+| `QuadOverlay.dotsLine` | Corner dots + hairline polygon between them |
+| `QuadOverlay.glow` | Blurred halo + stroked polygon |
+
+Use one directly in a `DoclensView`'s `overlayBuilder`:
+
+```dart
+DoclensView(
+  controller: controller,
+  overlayBuilder: (ctx, quad, status) => QuadOverlay.corners(
+    quad: quad,
+    status: status,
+    accent: Colors.lime,
+  ),
+  ...,
+);
+```
+
+Or pick a style on `DoclensScreen.scan(...)` without writing a builder:
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  overlayStyle: QuadOverlayStyle.cornersFilled,
+  accentColor: Colors.lime,
+);
+```
+
+Status colour follows `accent` / `warning` automatically: brighter
+accent on `confirming`, accent on `aligned`, warning on
+`tilted`/`tooClose`/`tooFar`, muted white while `searching`.
+
+### 3. OS-native — `scanWithNativeUI`
+
+Hand off to the OS scanner when you don't need custom branding on the
+camera surface.
 
 ```dart
 final List<String>? paths =
@@ -67,7 +130,6 @@ final List<String>? paths =
   pageLimit: 20,
   allowGalleryImport: true,
 );
-// `paths` is null if the user cancelled, otherwise the cropped page JPEGs.
 ```
 
 On iOS this launches
@@ -75,11 +137,9 @@ On iOS this launches
 On Android it launches
 [`GmsDocumentScanner`](https://developers.google.com/ml-kit/vision/doc-scanner/android).
 Both flows are full-screen, multi-page, and uniform on both platforms.
+No `DoclensController` is required for this mode.
 
-No `DoclensController` is required for this mode — call it from
-anywhere.
-
-## Auto-capture, the way VisionKit does it
+## Auto-capture with confirmation
 
 Auto-capture is a three-stage state machine that mirrors the rhythm of
 Apple's native scanner:
@@ -92,36 +152,26 @@ Apple's native scanner:
    `autoCaptureConfirmationDelay` (350 ms default), the shutter fires.
 
 Move the camera during the confirmation window to abort. All thresholds
-are knobs on `ScannerConfig`.
+are knobs on `ScannerConfig` and surface as top-level parameters on
+`DoclensScreen.scan(...)`.
 
-## Customization
+## Continuous autofocus + tap-to-focus
 
-Every overlay is a builder. Pass `null` to render nothing, the static
-defaults for a quick start, or your own widget for full control:
+The native session enables **continuous autofocus** by default on both
+platforms (`AVCaptureDevice.focusMode = .continuousAutoFocus` on iOS;
+CameraX's default `CONTROL_AF_MODE_CONTINUOUS_PICTURE` on Android), and
+opts iOS into the near-distance hint that fits A4-at-arm's-length.
+
+When `ScannerConfig.enableTapToFocus` is `true` (the default), tapping
+the preview triggers a one-shot focus + auto-exposure at that point. The
+camera reverts to continuous AF after ~3 seconds. The widget renders a
+brief focus reticle at the tap location.
+
+You can also drive focus programmatically:
 
 ```dart
-DoclensView(
-  controller: controller,
-  config: const ScannerConfig(
-    enableAutoCapture: true,
-    autoCaptureStabilityDuration: Duration(milliseconds: 800),
-    autoCaptureCornerThreshold: 0.02, // fraction of frame
-    detectionThrottleHz: 15,
-  ),
-  overlayBuilder: (ctx, quad, status) => MyQuadOverlay(quad: quad),
-  captureButtonBuilder: (ctx, onTap) => MyBrandShutter(onTap: onTap),
-  flashButtonBuilder: (ctx, mode, onCycle) =>
-      MyFlashChip(mode: mode, onCycle: onCycle),
-)
+await controller.focusAt(const Offset(0.5, 0.5));  // centre of frame
 ```
-
-The example app ships two shipping options end-to-end:
-
-- The drop-in `DoclensScreen` (one-line call).
-- `native_os_style.dart` — full-screen native scanner via `scanWithNativeUI`.
-
-For maximum customisation, use the `DoclensView` widget directly
-with your own builders — every overlay slot is optional and overridable.
 
 ## Edit corners after capture
 
@@ -151,7 +201,7 @@ Minimum **iOS 13.0**. Add to `Info.plist`:
 Detection uses `VNDetectDocumentSegmentationRequest` on iOS 15+ and
 gracefully falls back to a docs-tuned `VNDetectRectanglesRequest` on iOS
 13/14. Capture uses `AVCapturePhotoOutput`; perspective warp uses
-`CIPerspectiveCorrection`. Both pixel-orientation and EXIF orientation
+`CIPerspectiveCorrection`. Both pixel orientation and EXIF orientation
 are handled correctly — see [`doc/decisions.md`](doc/decisions.md).
 
 The native UI flow uses `VNDocumentCameraViewController`.
@@ -161,38 +211,47 @@ The native UI flow uses `VNDocumentCameraViewController`.
 Minimum **API 21**. `android.permission.CAMERA` is merged into the host
 manifest automatically.
 
-Detection uses CameraX + a pure-Kotlin Sobel detector (no OpenCV, no ML
-Kit on the live-preview path — the package stays lean). Capture uses
-`ImageCapture` + `android.graphics.Matrix.setPolyToPoly`.
+Detection uses CameraX with a pure-Kotlin Sobel-based pipeline on the
+live-preview path (no OpenCV, no on-device ML model bundling). Capture
+uses `ImageCapture` + `android.graphics.Matrix.setPolyToPoly`.
 
 The native UI flow uses ML Kit's `GmsDocumentScanner`, which is delivered
-on demand by Google Play services — no on-device model bundling, no
-`<meta-data>` requirement. Gracefully fails with
-`ScannerUnavailableException` on devices without Play services
-(Huawei, Amazon Fire).
+on demand by Google Play services. Gracefully fails with
+`ScannerUnavailableException` on devices without Play services.
 
 ## API surface
 
-- **`DoclensController`** — owns a session. Streams:
-  `quadStream`, `statusStream`, `autoCaptureStream`, `lowLightStream`,
+- **`DoclensScreen`** — drop-in scanner route. `DoclensScreen.scan(ctx)`
+  pushes a full-screen route, awaits a `ScanResult?`, and pops itself
+  when the user accepts or cancels.
+- **`DoclensController`** — owns a session. Streams: `quadStream`,
+  `statusStream`, `autoCaptureStream`, `lowLightStream`,
   `previewSizeStream`. Methods: `initialize()`, `capture()`,
-  `warpImage()`, `setFlashMode()`, `cycleFlashMode()`, `switchCamera()`,
-  `pause()`, `resume()`, `dispose()`.
-- **`DoclensView`** — Flutter widget rendering preview + your
-  overlays. Builder slots: `overlayBuilder`, `captureButtonBuilder`,
+  `warpImage()`, `focusAt()`, `setFlashMode()`, `cycleFlashMode()`,
+  `switchCamera()`, `pause()`, `resume()`, `dispose()`.
+- **`DoclensView`** — Flutter widget rendering preview + your overlays.
+  Builder slots: `overlayBuilder`, `captureButtonBuilder`,
   `flashButtonBuilder`, `lowLightHintBuilder`, `debugOverlayBuilder`.
-- **`EditCornersScreen`** — drag-the-corners helper with re-warp on save.
+  Handles tap-to-focus when `ScannerConfig.enableTapToFocus` is true.
+- **`EditCornersScreen`** — drag-the-corners helper with re-warp on
+  save.
+- **`QuadOverlay`** + **`QuadOverlayStyle`** — family of pre-built
+  overlay widgets (`outline`, `filled`, `corners`, `cornersFilled`,
+  `dots`, `dotsLine`, `glow`) with status-driven colour. Pass the enum
+  via `DoclensScreen.overlayStyle` or use a constructor directly inside
+  an `overlayBuilder`.
 - **`scanWithNativeUI()`** on `DoclensPlatform.instance` — full
   native-modal scan, returns `List<String>?`.
 - **`ScannerConfig`** — every feature flag with a sensible default
   (auto-capture timing, smoothing window, detection throttle, JPEG
-  quality, flash, lens, lifecycle, telemetry).
+  quality, flash, lens, lifecycle, telemetry, tap-to-focus,
+  pinch-to-zoom).
 - **`Quad`** — 4-point TL/TR/BR/BL with `area`, `centroid`, `contains`,
   `interpolate`, `maxCornerDistance`, `scaleToSize`.
 - **`ScanResult`** — `croppedImagePath`, `rawImagePath`, `detectedQuad`,
   `rawImageSize`, `warpError`.
-- **`StabilityTracker`** + **`QuadSmoother`** — pure Dart helpers, exposed
-  for tests or custom pipelines.
+- **`StabilityTracker`** + **`QuadSmoother`** — pure Dart helpers,
+  exposed for tests or custom pipelines.
 - **`DetectionStatus`** — `searching`, `tooFar`, `tooClose`, `tilted`,
   `aligned`, `confirming`, `noPaper`.
 - **Exceptions** — `ScannerPermissionException`,
@@ -212,7 +271,6 @@ on demand by Google Play services — no on-device model bundling, no
   pipeline and threading rules.
 - [Decisions](doc/decisions.md) — every non-obvious design choice with
   citations to Apple / Google docs.
-- [Tuning](doc/tuning.md) — auto-capture / status threshold methodology.
 
 ## License
 

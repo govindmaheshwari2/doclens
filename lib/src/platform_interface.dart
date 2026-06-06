@@ -44,7 +44,7 @@ abstract class DoclensPlatform extends PlatformInterface {
   Future<String> warpImage({
     required String rawImagePath,
     required Quad quad,
-    int jpegQuality = 92,
+    int jpegQuality = 100,
   });
 
   Future<void> setFlashMode(FlashMode mode);
@@ -73,6 +73,6 @@ abstract class DoclensPlatform extends PlatformInterface {
   Future<List<String>?> scanWithNativeUI({
     int pageLimit = 100,
     bool allowGalleryImport = false,
-    int jpegQuality = 92,
+    int jpegQuality = 100,
   });
 }

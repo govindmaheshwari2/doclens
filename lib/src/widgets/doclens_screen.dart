@@ -7,21 +7,23 @@ import '../models.dart';
 import '../quad.dart';
 import 'doclens_view.dart';
 import 'edit_corners_screen.dart';
+import 'quad_overlay.dart';
 
 // =====================================================================
-//  Aesthetic tokens — a tiny private design system. Editorial /
-//  instrument-panel: precision tool with a side of Hasselblad reticle.
+//  Aesthetic tokens — refined editorial monochrome.
+//  Pure black-and-white so the scanner drops into any host app without
+//  fighting its brand palette. Adopters that want chroma can pass
+//  `accentColor` / `warningColor` to the screen.
 // =====================================================================
 
-const _kBgInk = Color(0xFF0A0B0D);
-const _kSurface = Color(0xFF13151A);
-const _kSurfaceHi = Color(0xFF1A1D24);
+const _kBgInk = Color(0xFF000000);
+const _kSurface = Color(0xFF0E0E0E);
+const _kSurfaceHi = Color(0xFF181818);
 const _kBorderHairline = Color(0x14FFFFFF);
-const _kBorderSoft = Color(0x22FFFFFF);
-const _kTextPrimary = Color(0xFFF4F4F2);
-const _kTextSecondary = Color(0xFF8C8E93);
-const _kTextDim = Color(0xFF5A5C61);
-const _kErrorTint = Color(0xFFFF6B6B);
+const _kBorderSoft = Color(0x26FFFFFF);
+const _kTextPrimary = Color(0xFFFFFFFF);
+const _kTextSecondary = Color(0xFFAAAAAA);
+const _kErrorTint = Color(0xFFE8E8E8);
 
 const _kMonoFamilies = <String>['SF Mono', 'Menlo', 'Roboto Mono', 'monospace'];
 const _kSerifFamilies = <String>['Georgia', 'Iowan Old Style', 'serif'];
@@ -100,15 +102,23 @@ class DoclensScreen extends StatefulWidget {
     // --- UI knobs ---
     this.accentColor,
     this.warningColor,
+    this.overlayStyle,
     this.backgroundColor = Colors.black,
-    this.appBarTitle = 'Scan result',
-    this.captureHintText = 'Hold steady — auto capturing',
+    this.appBarTitle = 'Preview',
+    this.captureHintText = 'Hold steady to capture',
     this.retakeLabel = 'Retake',
     this.editCornersLabel = 'Edit corners',
     this.useLabel = 'Use',
     this.showHint = true,
     this.showCloseButton = true,
     this.enableEditCorners = true,
+    // --- review-screen builders ---
+    this.reviewBuilder,
+    this.reviewHeaderBuilder,
+    this.reviewImageBuilder,
+    this.reviewEmptyBuilder,
+    this.reviewActionsBuilder,
+    this.errorBuilder,
     // --- escape hatches ---
     this.config = const ScannerConfig(),
     this.onCapture,
@@ -168,11 +178,10 @@ class DoclensScreen extends StatefulWidget {
   final bool? enablePerspectiveWarp;
 
   /// JPEG compression quality `1`–`100` for both the raw and cropped
-  /// images written to disk.
-  ///
-  /// `92` is visually indistinguishable from `100` in document
-  /// dropoff tests and is `~3×` smaller — recommended for most apps.
-  /// Use `100` only if you're going to re-process the bytes.
+  /// images written to disk. Defaults to **100** so OCR / downstream
+  /// re-processing has the cleanest possible bytes. Drop to `~92` if
+  /// disk size matters (visually indistinguishable from 100 and
+  /// ~3× smaller).
   final int? jpegQuality;
 
   /// Flash mode the camera should start in.
@@ -217,14 +226,36 @@ class DoclensScreen extends StatefulWidget {
   /// - the shutter button's glow,
   /// - the "Use" button on the review screen.
   ///
-  /// Defaults to the package's "aligned" green
-  /// (`Color(0xFF34C759)` — Apple's system green).
+  /// Defaults to pure white (`Color(0xFFFFFFFF)`) so the scanner reads
+  /// as a neutral, monochrome instrument that drops into any host app's
+  /// palette. Pass a brand colour to tint accents.
   final Color? accentColor;
 
   /// Colour used when the document is detected but **not yet capturable**
-  /// (`tooFar`, `tooClose`, or `tilted`). Defaults to amber
-  /// (`Color(0xFFFFCC00)`).
+  /// (`tooFar`, `tooClose`, or `tilted`). Defaults to a neutral mid-grey
+  /// (`Color(0xFF8C8C8C)`) — readable against the dark preview without
+  /// introducing a second hue.
   final Color? warningColor;
+
+  /// Visual style of the detected-quad overlay rendered on top of the
+  /// live preview.
+  ///
+  /// When `null` (default), the drop-in scanner uses its built-in
+  /// editorial "reticle" overlay (corner brackets framing the whole
+  /// viewfinder, plus highlighted document corners). Pass any value of
+  /// [QuadOverlayStyle] to swap in one of the package-shipped looks:
+  ///
+  /// - `QuadOverlayStyle.outline` — just a stroked polygon
+  /// - `QuadOverlayStyle.filled` — stroked polygon + tinted fill
+  /// - `QuadOverlayStyle.corners` — corner brackets only
+  /// - `QuadOverlayStyle.cornersFilled` — corner brackets + tinted fill
+  /// - `QuadOverlayStyle.dots` — filled dots at corners
+  /// - `QuadOverlayStyle.dotsLine` — corner dots + hairline polygon
+  /// - `QuadOverlayStyle.glow` — blurred halo + stroked polygon
+  ///
+  /// Status colour follows [accentColor] (aligned/confirming) and
+  /// [warningColor] (tilted/too close/too far).
+  final QuadOverlayStyle? overlayStyle;
 
   /// Background colour of both the live preview and the review screen.
   /// Defaults to `Colors.black` — gives the camera preview the most
@@ -289,6 +320,44 @@ class DoclensScreen extends StatefulWidget {
   ///   stay on the scanner for additional pages.
   final void Function(ScanResult result)? onCapture;
 
+  /// Full-replacement builder for the post-capture review screen.
+  ///
+  /// When non-null, the default [DoclensReviewScreen] is **not** used.
+  /// You receive a [DoclensReviewContext] containing the [ScanResult]
+  /// plus three callbacks (`onRetake`, `onEditCorners`, `onAccept`) —
+  /// invoke them from your custom UI to drive the scanner's state
+  /// machine.
+  ///
+  /// For partial customisation (just the header, just the action row,
+  /// etc.) prefer the per-section builders below.
+  final DoclensReviewBuilder? reviewBuilder;
+
+  /// Replaces only the **header** of the default review screen. Ignored
+  /// when [reviewBuilder] is set.
+  final DoclensReviewBuilder? reviewHeaderBuilder;
+
+  /// Replaces only the **cropped-image preview** on the default review
+  /// screen. Receives a [DoclensReviewContext] whose
+  /// `result.croppedImagePath` is guaranteed non-null when this builder
+  /// is invoked. Ignored when [reviewBuilder] is set.
+  final DoclensReviewBuilder? reviewImageBuilder;
+
+  /// Replaces only the **empty / warp-error placeholder** on the default
+  /// review screen. Invoked when the perspective warp failed or no
+  /// cropped output was produced. Ignored when [reviewBuilder] is set.
+  final DoclensReviewBuilder? reviewEmptyBuilder;
+
+  /// Replaces only the **bottom action row** (Retake / Edit corners /
+  /// Use) on the default review screen. Ignored when [reviewBuilder] is
+  /// set.
+  final DoclensReviewBuilder? reviewActionsBuilder;
+
+  /// Builder for the screen shown when the camera fails to initialise.
+  /// Receives the error message. When `null`, the package ships a
+  /// minimalist default. Useful for matching your app's chrome on
+  /// permission-denied or hardware-unavailable states.
+  final Widget Function(BuildContext context, String message)? errorBuilder;
+
   /// Push the scanner as a full-screen modal route, wait for the user to
   /// confirm or cancel, and return the resulting [ScanResult] — or
   /// `null` if they cancel (back gesture, close button, or system pop).
@@ -323,15 +392,22 @@ class DoclensScreen extends StatefulWidget {
     int? detectionThrottleHz,
     Color? accentColor,
     Color? warningColor,
+    QuadOverlayStyle? overlayStyle,
     Color backgroundColor = Colors.black,
-    String appBarTitle = 'Scan result',
-    String captureHintText = 'Hold steady — auto capturing',
+    String appBarTitle = 'Preview',
+    String captureHintText = 'Hold steady to capture',
     String retakeLabel = 'Retake',
     String editCornersLabel = 'Edit corners',
     String useLabel = 'Use',
     bool showHint = true,
     bool showCloseButton = true,
     bool enableEditCorners = true,
+    DoclensReviewBuilder? reviewBuilder,
+    DoclensReviewBuilder? reviewHeaderBuilder,
+    DoclensReviewBuilder? reviewImageBuilder,
+    DoclensReviewBuilder? reviewEmptyBuilder,
+    DoclensReviewBuilder? reviewActionsBuilder,
+    Widget Function(BuildContext context, String message)? errorBuilder,
     ScannerConfig config = const ScannerConfig(),
   }) {
     return Navigator.of(context).push<ScanResult>(
@@ -351,6 +427,7 @@ class DoclensScreen extends StatefulWidget {
           detectionThrottleHz: detectionThrottleHz,
           accentColor: accentColor,
           warningColor: warningColor,
+          overlayStyle: overlayStyle,
           backgroundColor: backgroundColor,
           appBarTitle: appBarTitle,
           captureHintText: captureHintText,
@@ -360,6 +437,12 @@ class DoclensScreen extends StatefulWidget {
           showHint: showHint,
           showCloseButton: showCloseButton,
           enableEditCorners: enableEditCorners,
+          reviewBuilder: reviewBuilder,
+          reviewHeaderBuilder: reviewHeaderBuilder,
+          reviewImageBuilder: reviewImageBuilder,
+          reviewEmptyBuilder: reviewEmptyBuilder,
+          reviewActionsBuilder: reviewActionsBuilder,
+          errorBuilder: errorBuilder,
           config: config,
         ),
       ),
@@ -376,10 +459,12 @@ class _DoclensScreenState extends State<DoclensScreen> {
   bool _initFailed = false;
   String? _initError;
 
-  Color get _accent =>
-      widget.accentColor ?? const Color(0xFFD4FF4D); // acid lime
-  Color get _warning =>
-      widget.warningColor ?? const Color(0xFFFFB454); // warm amber
+  // Default to pure monochrome so the scanner blends into any host UI.
+  // Adopters that want a brand tint can still pass `accentColor` /
+  // `warningColor` — every internal use is just a `Color`, no hard-coded
+  // hues anywhere else.
+  Color get _accent => widget.accentColor ?? const Color(0xFFFFFFFF);
+  Color get _warning => widget.warningColor ?? const Color(0xFF8C8C8C);
 
   /// Merge the top-level overrides into [widget.config]. Any non-null
   /// override wins; everything else passes through unchanged.
@@ -447,17 +532,42 @@ class _DoclensScreenState extends State<DoclensScreen> {
     if (!mounted) return;
     final accepted = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => _ReviewScreen(
-          result: result,
-          controller: _controller,
-          appBarTitle: widget.appBarTitle,
-          accent: _accent,
-          backgroundColor: widget.backgroundColor,
-          retakeLabel: widget.retakeLabel,
-          editCornersLabel: widget.editCornersLabel,
-          useLabel: widget.useLabel,
-          enableEditCorners: widget.enableEditCorners,
-        ),
+        builder: (_) {
+          // Full-replacement escape hatch: when `reviewBuilder` is set,
+          // hand the dev a ready-to-go `DoclensReviewContext` and let
+          // them render whatever they want. They still call
+          // `review.onAccept` / `onRetake` / `onEditCorners` to drive
+          // the state machine.
+          if (widget.reviewBuilder != null) {
+            return _CustomReviewHost(
+              result: result,
+              controller: _controller,
+              accent: _accent,
+              backgroundColor: widget.backgroundColor,
+              appBarTitle: widget.appBarTitle,
+              retakeLabel: widget.retakeLabel,
+              editCornersLabel: widget.editCornersLabel,
+              useLabel: widget.useLabel,
+              enableEditCorners: widget.enableEditCorners,
+              builder: widget.reviewBuilder!,
+            );
+          }
+          return DoclensReviewScreen(
+            result: result,
+            controller: _controller,
+            appBarTitle: widget.appBarTitle,
+            accent: _accent,
+            backgroundColor: widget.backgroundColor,
+            retakeLabel: widget.retakeLabel,
+            editCornersLabel: widget.editCornersLabel,
+            useLabel: widget.useLabel,
+            enableEditCorners: widget.enableEditCorners,
+            headerBuilder: widget.reviewHeaderBuilder,
+            imageBuilder: widget.reviewImageBuilder,
+            emptyBuilder: widget.reviewEmptyBuilder,
+            actionsBuilder: widget.reviewActionsBuilder,
+          );
+        },
       ),
     );
     if (!mounted) return;
@@ -475,28 +585,32 @@ class _DoclensScreenState extends State<DoclensScreen> {
   String _statusLabel(DetectionStatus s) {
     switch (s) {
       case DetectionStatus.searching:
-        return 'SEARCHING';
+        return 'Looking for a document';
       case DetectionStatus.noPaper:
-        return 'NO DOCUMENT';
+        return 'Point at a document';
       case DetectionStatus.tooFar:
-        return 'MOVE CLOSER';
+        return 'Move closer';
       case DetectionStatus.tooClose:
-        return 'MOVE BACK';
+        return 'Move back';
       case DetectionStatus.tilted:
-        return 'HOLD PARALLEL';
+        return 'Hold the camera flat';
       case DetectionStatus.aligned:
-        return 'ALIGNED · HOLD STILL';
+        return 'Hold still';
       case DetectionStatus.confirming:
-        return 'CAPTURING';
+        return 'Capturing';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_initFailed) {
+      final message = _initError ?? 'Failed to start scanner';
+      if (widget.errorBuilder != null) {
+        return widget.errorBuilder!(context, message);
+      }
       return _InstrumentErrorScreen(
         bg: widget.backgroundColor,
-        message: _initError ?? 'Failed to start scanner',
+        message: message,
         accent: _accent,
       );
     }
@@ -513,12 +627,27 @@ class _DoclensScreenState extends State<DoclensScreen> {
             DoclensView(
               controller: _controller,
               backgroundColor: widget.backgroundColor,
-              overlayBuilder: (ctx, quad, status) => _ReticleOverlay(
-                quad: quad,
-                status: status,
-                accent: _accent,
-                warning: _warning,
-              ),
+              overlayBuilder: (ctx, quad, status) {
+                // When the caller picks a `QuadOverlayStyle`, render that
+                // package-shipped family member instead of the screen's
+                // built-in reticle. Either way colours follow the
+                // user-supplied accent / warning.
+                if (widget.overlayStyle != null) {
+                  return quadOverlayFor(
+                    style: widget.overlayStyle!,
+                    quad: quad,
+                    status: status,
+                    accent: _accent,
+                    warning: _warning,
+                  );
+                }
+                return _ReticleOverlay(
+                  quad: quad,
+                  status: status,
+                  accent: _accent,
+                  warning: _warning,
+                );
+              },
               captureButtonBuilder: null, // we draw the shutter ourselves
               flashButtonBuilder: null, // ditto
               lowLightHintBuilder: null,
@@ -541,7 +670,6 @@ class _DoclensScreenState extends State<DoclensScreen> {
                 listenable: _controller,
                 builder: (context, _) => _TopInstrumentBar(
                   showClose: widget.showCloseButton,
-                  title: widget.appBarTitle.toUpperCase(),
                   accent: _accent,
                   onClose: () => Navigator.of(context).maybePop(),
                   flashMode: _controller.flashMode,
@@ -606,21 +734,98 @@ class _DoclensScreenState extends State<DoclensScreen> {
 
 // ---- review screen ----------------------------------------------------
 
-class _ReviewScreen extends StatefulWidget {
-  const _ReviewScreen({
+/// Context object passed to every [DoclensReviewScreen] builder slot.
+///
+/// Bundles the current scan result, the labels/accent configured on the
+/// screen, and the three action callbacks (`onRetake`, `onEditCorners`,
+/// `onAccept`) so custom builders can render any UI and still drive the
+/// scanner's state machine correctly.
+class DoclensReviewContext {
+  const DoclensReviewContext({
     required this.result,
-    required this.controller,
-    required this.appBarTitle,
     required this.accent,
     required this.backgroundColor,
+    required this.appBarTitle,
     required this.retakeLabel,
     required this.editCornersLabel,
     required this.useLabel,
     required this.enableEditCorners,
+    required this.onRetake,
+    required this.onEditCorners,
+    required this.onAccept,
+  });
+
+  /// The current scan result. Custom [DoclensReviewScreen.imageBuilder]s
+  /// should render `result.croppedImagePath ?? result.rawImagePath`.
+  final ScanResult result;
+  final Color accent;
+  final Color backgroundColor;
+  final String appBarTitle;
+  final String retakeLabel;
+  final String editCornersLabel;
+  final String useLabel;
+  final bool enableEditCorners;
+
+  /// Dismiss the review screen and return the user to the live preview to
+  /// take another shot. Wire this to your retake button.
+  final VoidCallback onRetake;
+
+  /// Push the bundled [EditCornersScreen] so the user can nudge the
+  /// detected corners by hand, then re-warp the photo.
+  final VoidCallback onEditCorners;
+
+  /// Accept the current result. The awaited `Future<ScanResult?>` from
+  /// [DoclensScreen.scan] resolves with [result].
+  final VoidCallback onAccept;
+}
+
+/// Signature for builder slots on [DoclensReviewScreen].
+typedef DoclensReviewBuilder = Widget Function(
+  BuildContext context,
+  DoclensReviewContext review,
+);
+
+/// Built-in review screen shown after a successful capture. Lets the user
+/// retake, edit corners, or accept the scan.
+///
+/// Customisation tiers:
+///
+/// 1. **Strings / colours** — pass `appBarTitle`, `retakeLabel`,
+///    `editCornersLabel`, `useLabel`, `accent`, `backgroundColor`.
+/// 2. **Per-section builders** — replace any of `headerBuilder`,
+///    `imageBuilder`, `emptyBuilder`, `actionsBuilder` with your own
+///    widgets while keeping the other defaults.
+/// 3. **Full replacement** — pass `DoclensScreen.reviewBuilder` to swap
+///    this screen out entirely for your own widget.
+///
+/// Each builder receives a [DoclensReviewContext] that exposes the
+/// current [ScanResult] plus the three action callbacks (`onRetake`,
+/// `onEditCorners`, `onAccept`) — invoke them to drive the scanner's
+/// state machine.
+class DoclensReviewScreen extends StatefulWidget {
+  const DoclensReviewScreen({
+    super.key,
+    required this.result,
+    required this.controller,
+    this.appBarTitle = 'Preview',
+    this.accent = const Color(0xFFFFFFFF),
+    this.backgroundColor = Colors.black,
+    this.retakeLabel = 'Retake',
+    this.editCornersLabel = 'Edit corners',
+    this.useLabel = 'Use',
+    this.enableEditCorners = true,
+    this.headerBuilder,
+    this.imageBuilder,
+    this.emptyBuilder,
+    this.actionsBuilder,
   });
 
   final ScanResult result;
+
+  /// The same controller that captured the [result] — needed so
+  /// "edit corners" can re-warp the raw image.
   final DoclensController controller;
+
   final String appBarTitle;
   final Color accent;
   final Color backgroundColor;
@@ -629,11 +834,30 @@ class _ReviewScreen extends StatefulWidget {
   final String useLabel;
   final bool enableEditCorners;
 
+  /// Replaces the top header (back button + title). The default renders
+  /// a serif title with a hairline back chip.
+  final DoclensReviewBuilder? headerBuilder;
+
+  /// Replaces the cropped-image preview. Default renders
+  /// `result.croppedImagePath` with `BoxFit.scaleDown` inside a framed
+  /// surface, falling back to [emptyBuilder] when the path is `null`.
+  final DoclensReviewBuilder? imageBuilder;
+
+  /// Replaces the placeholder shown when the warp failed or produced no
+  /// cropped output. Default renders a "Could not crop" message.
+  final DoclensReviewBuilder? emptyBuilder;
+
+  /// Replaces the bottom action row (Retake / Edit corners / Use).
+  /// Default renders ghost buttons + a primary "Use" button — call
+  /// `review.onRetake` / `review.onEditCorners` / `review.onAccept` on
+  /// tap.
+  final DoclensReviewBuilder? actionsBuilder;
+
   @override
-  State<_ReviewScreen> createState() => _ReviewScreenState();
+  State<DoclensReviewScreen> createState() => _DoclensReviewScreenState();
 }
 
-class _ReviewScreenState extends State<_ReviewScreen> {
+class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
   late ScanResult _result = widget.result;
 
   Future<void> _editCorners() async {
@@ -667,40 +891,142 @@ class _ReviewScreenState extends State<_ReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final path = _result.croppedImagePath;
+    final review = DoclensReviewContext(
+      result: _result,
+      accent: widget.accent,
+      backgroundColor: widget.backgroundColor,
+      appBarTitle: widget.appBarTitle,
+      retakeLabel: widget.retakeLabel,
+      editCornersLabel: widget.editCornersLabel,
+      useLabel: widget.useLabel,
+      enableEditCorners: widget.enableEditCorners,
+      onRetake: () => Navigator.of(context).pop(false),
+      onEditCorners: _editCorners,
+      onAccept: () => Navigator.of(context).pop(true),
+    );
+
+    final header = widget.headerBuilder?.call(context, review) ??
+        _ReviewHeader(
+          title: review.appBarTitle,
+          accent: review.accent,
+          onBack: review.onRetake,
+        );
+    final body = path == null
+        ? (widget.emptyBuilder?.call(context, review) ??
+            _ReviewEmpty(
+              hasWarpError: review.result.warpError != null,
+              editLabel: review.editCornersLabel,
+              accent: review.accent,
+            ))
+        : (widget.imageBuilder?.call(context, review) ??
+            _ReviewImage(path: path, accent: review.accent));
+    final actions = widget.actionsBuilder?.call(context, review) ??
+        _ReviewActions(
+          accent: review.accent,
+          retakeLabel: review.retakeLabel,
+          editCornersLabel: review.editCornersLabel,
+          useLabel: review.useLabel,
+          enableEditCorners: review.enableEditCorners,
+          onRetake: review.onRetake,
+          onEditCorners: review.onEditCorners,
+          onUse: review.onAccept,
+        );
+
     return Scaffold(
       backgroundColor: widget.backgroundColor,
       body: SafeArea(
         bottom: false,
         child: Column(
           children: [
-            _ReviewHeader(
-              title: widget.appBarTitle,
-              accent: widget.accent,
-              onBack: () => Navigator.of(context).pop(false),
-            ),
-            Expanded(
-              child: path == null
-                  ? _ReviewEmpty(
-                      hasWarpError: _result.warpError != null,
-                      editLabel: widget.editCornersLabel,
-                      accent: widget.accent,
-                    )
-                  : _ReviewImage(path: path, accent: widget.accent),
-            ),
-            _ReviewActions(
-              accent: widget.accent,
-              retakeLabel: widget.retakeLabel,
-              editCornersLabel: widget.editCornersLabel,
-              useLabel: widget.useLabel,
-              enableEditCorners: widget.enableEditCorners,
-              onRetake: () => Navigator.of(context).pop(false),
-              onEditCorners: _editCorners,
-              onUse: () => Navigator.of(context).pop(true),
-            ),
+            header,
+            Expanded(child: body),
+            actions,
           ],
         ),
       ),
     );
+  }
+}
+
+/// Internal host that drives the same state-machine the default review
+/// screen does (mutate cropped path after edit-corners, pop with a
+/// bool), but delegates the entire UI to a user-supplied builder.
+class _CustomReviewHost extends StatefulWidget {
+  const _CustomReviewHost({
+    required this.result,
+    required this.controller,
+    required this.accent,
+    required this.backgroundColor,
+    required this.appBarTitle,
+    required this.retakeLabel,
+    required this.editCornersLabel,
+    required this.useLabel,
+    required this.enableEditCorners,
+    required this.builder,
+  });
+
+  final ScanResult result;
+  final DoclensController controller;
+  final Color accent;
+  final Color backgroundColor;
+  final String appBarTitle;
+  final String retakeLabel;
+  final String editCornersLabel;
+  final String useLabel;
+  final bool enableEditCorners;
+  final DoclensReviewBuilder builder;
+
+  @override
+  State<_CustomReviewHost> createState() => _CustomReviewHostState();
+}
+
+class _CustomReviewHostState extends State<_CustomReviewHost> {
+  late ScanResult _result = widget.result;
+
+  Future<void> _editCorners() async {
+    final newPath = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => EditCornersScreen(
+          imagePath: _result.rawImagePath,
+          initialQuad: _result.detectedQuad,
+          imageSize: _result.rawImageSize,
+          onSave: (q) async {
+            final out =
+                await widget.controller.warpImage(_result.rawImagePath, q);
+            if (mounted) Navigator.of(context).pop(out);
+            return out;
+          },
+        ),
+      ),
+    );
+    if (newPath != null && mounted) {
+      setState(() {
+        _result = ScanResult(
+          croppedImagePath: newPath,
+          rawImagePath: _result.rawImagePath,
+          detectedQuad: _result.detectedQuad,
+          rawImageSize: _result.rawImageSize,
+        );
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final review = DoclensReviewContext(
+      result: _result,
+      accent: widget.accent,
+      backgroundColor: widget.backgroundColor,
+      appBarTitle: widget.appBarTitle,
+      retakeLabel: widget.retakeLabel,
+      editCornersLabel: widget.editCornersLabel,
+      useLabel: widget.useLabel,
+      enableEditCorners: widget.enableEditCorners,
+      onRetake: () => Navigator.of(context).pop(false),
+      onEditCorners: _editCorners,
+      onAccept: () => Navigator.of(context).pop(true),
+    );
+    return widget.builder(context, review);
   }
 }
 
@@ -739,7 +1065,6 @@ class _Vignette extends StatelessWidget {
 class _TopInstrumentBar extends StatelessWidget {
   const _TopInstrumentBar({
     required this.showClose,
-    required this.title,
     required this.accent,
     required this.onClose,
     required this.flashMode,
@@ -747,7 +1072,6 @@ class _TopInstrumentBar extends StatelessWidget {
   });
 
   final bool showClose;
-  final String title;
   final Color accent;
   final VoidCallback onClose;
   final FlashMode flashMode;
@@ -790,36 +1114,11 @@ class _TopInstrumentBar extends StatelessWidget {
           else
             const SizedBox(width: 36),
           const SizedBox(width: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'NATIVE DOC SCANNER',
-                  style: _mono(
-                    size: 9,
-                    color: accent,
-                    letterSpacing: 0.22,
-                    weight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  title,
-                  style: _serif(
-                    size: 19,
-                    italic: true,
-                    color: _kTextPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          const Expanded(child: SizedBox.shrink()),
           _InstrumentIconButton(
             icon: _flashIcon(),
             onTap: onFlash,
             accent: accent,
-            label: flashMode.name.toUpperCase(),
           ),
         ],
       ),
@@ -832,13 +1131,11 @@ class _InstrumentIconButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     required this.accent,
-    this.label,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final Color accent;
-  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -847,30 +1144,13 @@ class _InstrumentIconButton extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 36,
-        padding: EdgeInsets.symmetric(horizontal: label == null ? 9 : 10),
+        padding: const EdgeInsets.symmetric(horizontal: 9),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: _kBorderSoft),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: _kTextPrimary, size: 17),
-            if (label != null) ...[
-              const SizedBox(width: 8),
-              Text(
-                label!,
-                style: _mono(
-                  size: 9.5,
-                  color: _kTextSecondary,
-                  weight: FontWeight.w600,
-                  letterSpacing: 0.22,
-                ),
-              ),
-            ],
-          ],
-        ),
+        child: Icon(icon, color: _kTextPrimary, size: 17),
       ),
     );
   }
@@ -929,10 +1209,10 @@ class _StatusReadout extends StatelessWidget {
               Text(
                 label,
                 style: _mono(
-                  size: 11,
+                  size: 12,
                   color: _kTextPrimary,
-                  weight: FontWeight.w600,
-                  letterSpacing: 0.22,
+                  weight: FontWeight.w500,
+                  letterSpacing: 0.0,
                 ),
               ),
             ],
@@ -987,12 +1267,12 @@ class _PulseDotState extends State<_PulseDot>
           height: 8,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: widget.color.withValues(alpha: 0.4 + 0.6 * t),
+            color: widget.color.withValues(alpha: 0.5 + 0.5 * t),
             boxShadow: [
               BoxShadow(
-                color: widget.color.withValues(alpha: 0.45 * t),
-                blurRadius: 8 * t,
-                spreadRadius: 1 * t,
+                color: widget.color.withValues(alpha: 0.25 * t),
+                blurRadius: 6 * t,
+                spreadRadius: 0.5 * t,
               ),
             ],
           ),
@@ -1027,79 +1307,17 @@ class _BottomShutterBand extends StatelessWidget {
           colors: [Color(0xCC000000), Color(0x00000000)],
         ),
       ),
-      child: Row(
-        children: [
-          Expanded(child: _CalibrationStrip(accent: accent)),
-          const SizedBox(width: 24),
-          _InstrumentShutter(
-            accent: accent,
-            isCapturing: isCapturing,
-            armed: status == DetectionStatus.aligned ||
-                status == DetectionStatus.confirming,
-            onTap: onCapture,
-          ),
-          const SizedBox(width: 24),
-          Expanded(child: _CalibrationStrip(accent: accent, reverse: true)),
-        ],
+      child: Center(
+        child: _InstrumentShutter(
+          accent: accent,
+          isCapturing: isCapturing,
+          armed: status == DetectionStatus.aligned ||
+              status == DetectionStatus.confirming,
+          onTap: onCapture,
+        ),
       ),
     );
   }
-}
-
-class _CalibrationStrip extends StatelessWidget {
-  const _CalibrationStrip({required this.accent, this.reverse = false});
-  final Color accent;
-  final bool reverse;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 28,
-      child: CustomPaint(
-        painter: _CalibrationPainter(accent: accent, reverse: reverse),
-      ),
-    );
-  }
-}
-
-class _CalibrationPainter extends CustomPainter {
-  _CalibrationPainter({required this.accent, required this.reverse});
-  final Color accent;
-  final bool reverse;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final base = Paint()
-      ..color = _kTextDim.withValues(alpha: 0.6)
-      ..strokeWidth = 1;
-    final tall = Paint()
-      ..color = accent
-      ..strokeWidth = 1.4;
-
-    const ticks = 14;
-    final spacing = size.width / (ticks - 1);
-    final cy = size.height / 2;
-    for (var i = 0; i < ticks; i++) {
-      final x = reverse ? size.width - i * spacing : i * spacing;
-      final isMajor = i % 4 == 0;
-      final h = isMajor ? 12.0 : 6.0;
-      canvas.drawLine(
-        Offset(x, cy - h / 2),
-        Offset(x, cy + h / 2),
-        isMajor ? tall : base,
-      );
-    }
-    // baseline
-    canvas.drawLine(
-      Offset(0, cy),
-      Offset(size.width, cy),
-      Paint()..color = _kTextDim.withValues(alpha: 0.25),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _CalibrationPainter old) =>
-      old.accent != accent || old.reverse != reverse;
 }
 
 class _InstrumentShutter extends StatefulWidget {
@@ -1146,7 +1364,13 @@ class _InstrumentShutterState extends State<_InstrumentShutter>
         animation: _press,
         builder: (context, _) {
           final scale = 1.0 - 0.06 * _press.value;
-          final inner = widget.armed ? widget.accent : Colors.white;
+          // Shutter stays pure white in all states so it reads as the
+          // familiar camera button against the preview, regardless of
+          // what `accentColor` the host app passes. The "armed" cue is
+          // a subtle white halo, not a colour swap — coloured shutters
+          // (e.g. when an adopter sets a brand orange) clash with the
+          // live preview underneath.
+          const shutterFill = Colors.white;
           return Transform.scale(
             scale: scale,
             child: Container(
@@ -1155,17 +1379,17 @@ class _InstrumentShutterState extends State<_InstrumentShutter>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: widget.armed
-                      ? widget.accent
-                      : _kTextPrimary.withValues(alpha: 0.85),
+                  color: _kTextPrimary.withValues(
+                    alpha: widget.armed ? 1.0 : 0.85,
+                  ),
                   width: 2,
                 ),
                 boxShadow: widget.armed
                     ? [
                         BoxShadow(
-                          color: widget.accent.withValues(alpha: 0.45),
-                          blurRadius: 22,
-                          spreadRadius: 1,
+                          color: Colors.white.withValues(alpha: 0.35),
+                          blurRadius: 18,
+                          spreadRadius: 0.5,
                         ),
                       ]
                     : null,
@@ -1177,8 +1401,8 @@ class _InstrumentShutterState extends State<_InstrumentShutter>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: widget.isCapturing
-                        ? inner.withValues(alpha: 0.55)
-                        : inner,
+                        ? shutterFill.withValues(alpha: 0.55)
+                        : shutterFill,
                   ),
                 ),
               ),
@@ -1215,24 +1439,9 @@ class _ReviewHeader extends StatelessWidget {
           ),
           const SizedBox(width: 18),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'REVIEW',
-                  style: _mono(
-                    size: 9,
-                    color: accent,
-                    letterSpacing: 0.24,
-                    weight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  title,
-                  style: _serif(size: 22, italic: true),
-                ),
-              ],
+            child: Text(
+              title,
+              style: _serif(size: 22, italic: true),
             ),
           ),
         ],
@@ -1267,7 +1476,13 @@ class _ReviewImage extends StatelessWidget {
                 padding: const EdgeInsets.all(10),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: Image.file(File(path), fit: BoxFit.contain),
+                  child: Center(
+                    child: Image.file(
+                      File(path),
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.center,
+                    ),
+                  ),
                 ),
               ),
               // 4 corner brackets so the surface feels like a viewfinder
@@ -1276,19 +1491,6 @@ class _ReviewImage extends StatelessWidget {
                 child: IgnorePointer(
                   child: CustomPaint(
                     painter: _CornerFramePainter(color: accent),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 14,
-                left: 18,
-                child: Text(
-                  'CROPPED',
-                  style: _mono(
-                    size: 9,
-                    color: accent,
-                    weight: FontWeight.w700,
-                    letterSpacing: 0.22,
                   ),
                 ),
               ),
@@ -1346,19 +1548,19 @@ class _ReviewEmpty extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            hasWarpError ? 'CROP UNAVAILABLE' : 'NO CROPPED RESULT',
+            hasWarpError ? 'Could not crop' : 'No preview',
             style: _mono(
-              size: 10,
+              size: 12,
               color: accent,
-              letterSpacing: 0.26,
-              weight: FontWeight.w700,
+              letterSpacing: 0.0,
+              weight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 14),
           Text(
             hasWarpError
-                ? 'The detected corners could not be warped into a flat document. Tap "$editLabel" to nudge them by hand, or retake the photo.'
-                : 'No cropped output was produced for this capture.',
+                ? 'We couldn\'t straighten the photo. Tap "$editLabel" to adjust the corners, or retake the photo.'
+                : 'No preview is available for this photo.',
             style: _serif(
               size: 17,
               italic: true,
@@ -1435,12 +1637,12 @@ class _GhostButton extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            label.toUpperCase(),
+            label,
             style: _mono(
-              size: 11,
+              size: 13,
               color: _kTextPrimary,
-              weight: FontWeight.w600,
-              letterSpacing: 0.22,
+              weight: FontWeight.w500,
+              letterSpacing: 0.0,
             ),
           ),
         ),
@@ -1469,12 +1671,11 @@ class _PrimaryButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: accent,
           borderRadius: BorderRadius.circular(10),
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(
-              color: accent.withValues(alpha: 0.35),
-              blurRadius: 18,
-              spreadRadius: 0,
-              offset: const Offset(0, 6),
+              color: Color(0x40000000),
+              blurRadius: 14,
+              offset: Offset(0, 4),
             ),
           ],
         ),
@@ -1482,12 +1683,12 @@ class _PrimaryButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              label.toUpperCase(),
+              label,
               style: _mono(
-                size: 11.5,
+                size: 13.5,
                 color: _kBgInk,
-                weight: FontWeight.w700,
-                letterSpacing: 0.26,
+                weight: FontWeight.w600,
+                letterSpacing: 0.0,
               ),
             ),
             const SizedBox(width: 8),
@@ -1526,32 +1727,32 @@ class _InstrumentErrorScreen extends StatelessWidget {
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: _kErrorTint,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: _kErrorTint.withValues(alpha: 0.5),
-                          blurRadius: 8,
+                          color: Color(0x33FFFFFF),
+                          blurRadius: 6,
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    'SCANNER OFFLINE',
+                    'Camera unavailable',
                     style: _mono(
-                      size: 10,
+                      size: 12,
                       color: _kErrorTint,
-                      letterSpacing: 0.26,
-                      weight: FontWeight.w700,
+                      letterSpacing: 0.0,
+                      weight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 24),
               Text(
-                'Could not start the camera.',
+                'We couldn\'t open the camera.',
                 style: _serif(size: 28, italic: true, height: 1.1),
               ),
               const SizedBox(height: 12),
@@ -1565,12 +1766,12 @@ class _InstrumentErrorScreen extends StatelessWidget {
                 child: Row(
                   children: [
                     Text(
-                      'DISMISS',
+                      'Dismiss',
                       style: _mono(
-                        size: 11,
+                        size: 13,
                         color: accent,
-                        weight: FontWeight.w700,
-                        letterSpacing: 0.24,
+                        weight: FontWeight.w600,
+                        letterSpacing: 0.0,
                       ),
                     ),
                     const SizedBox(width: 6),

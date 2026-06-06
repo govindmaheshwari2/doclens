@@ -11,7 +11,7 @@ import VisionKit
 /// - WWDC 2019 Session 224 "VisionKit and VNDocumentCameraViewController"
 final class NativeUIScanner: NSObject {
     private var pending: FlutterResult?
-    private var jpegQuality: Int = 92
+    private var jpegQuality: Int = 100
     private weak var presenter: UIViewController?
 
     func present(jpegQuality: Int, result: @escaping FlutterResult) {

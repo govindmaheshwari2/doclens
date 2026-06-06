@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:doclens/doclens.dart';
+import 'package:flutter/material.dart';
 
 import 'result_screen.dart';
 
@@ -27,6 +27,44 @@ const _coralLight = Color(0xFFFFB199);
 const _cream = Color(0xFFFFE8D6);
 const _ink = Color(0xFF0F0E12);
 
+/// Picker entries for the overlay-style cycler chip.
+///
+/// `null` slot in [_overlayStyleOrder] means "the branded animated halo"
+/// — the iconic, scanner-specific look that combines a breathing coral
+/// glow with the gradient stroke + corner pearls + (when capturing) a
+/// rotating registration sweep. All other entries delegate to the
+/// package's `QuadOverlay` family via [quadOverlayFor].
+const _overlayStyleOrder = <QuadOverlayStyle?>[
+  null, // animated coral halo (branded)
+  QuadOverlayStyle.filled,
+  QuadOverlayStyle.outline,
+  QuadOverlayStyle.corners,
+  QuadOverlayStyle.cornersFilled,
+  QuadOverlayStyle.dots,
+  QuadOverlayStyle.dotsLine,
+  QuadOverlayStyle.glow,
+];
+
+String _overlayStyleLabel(QuadOverlayStyle? style) {
+  if (style == null) return 'HALO';
+  switch (style) {
+    case QuadOverlayStyle.outline:
+      return 'OUTLINE';
+    case QuadOverlayStyle.filled:
+      return 'FILLED';
+    case QuadOverlayStyle.corners:
+      return 'CORNERS';
+    case QuadOverlayStyle.cornersFilled:
+      return 'CORNERS+';
+    case QuadOverlayStyle.dots:
+      return 'DOTS';
+    case QuadOverlayStyle.dotsLine:
+      return 'DOTS+';
+    case QuadOverlayStyle.glow:
+      return 'GLOW';
+  }
+}
+
 class BrandedStyleScanner extends StatefulWidget {
   const BrandedStyleScanner({super.key});
   @override
@@ -35,8 +73,7 @@ class BrandedStyleScanner extends StatefulWidget {
 
 class _BrandedStyleScannerState extends State<BrandedStyleScanner>
     with SingleTickerProviderStateMixin {
-  late final DoclensController _controller =
-      DoclensController(
+  late final DoclensController _controller = DoclensController(
     config: const ScannerConfig(
       detectionThrottleHz: 18,
       autoCaptureStabilityDuration: Duration(milliseconds: 1100),
@@ -56,6 +93,12 @@ class _BrandedStyleScannerState extends State<BrandedStyleScanner>
   DetectionStatus _liveStatus = DetectionStatus.searching;
   StreamSubscription<Quad?>? _quadSub;
   StreamSubscription<DetectionStatus>? _statusSub;
+
+  // Cycled by the chip next to the flash button. `null` is the iconic
+  // branded animated halo; other entries are package-shipped
+  // `QuadOverlay` variants from `_overlayStyleOrder`.
+  int _overlayIndex = 0;
+  QuadOverlayStyle? get _overlayStyle => _overlayStyleOrder[_overlayIndex];
 
   @override
   void initState() {
@@ -106,11 +149,27 @@ class _BrandedStyleScannerState extends State<BrandedStyleScanner>
           DoclensView(
             controller: _controller,
             backgroundColor: _ink,
-            overlayBuilder: (ctx, quad, status) => _HaloOverlay(
-              quad: quad,
-              status: status,
-              animation: _halo,
-            ),
+            overlayBuilder: (ctx, quad, status) {
+              // The first slot of `_overlayStyleOrder` is `null`, which
+              // means "render the iconic branded halo." Anything else
+              // delegates to the package's `QuadOverlay` family so this
+              // example doubles as a live tour of the shipped variants.
+              final s = _overlayStyle;
+              if (s == null) {
+                return _HaloOverlay(
+                  quad: quad,
+                  status: status,
+                  animation: _halo,
+                );
+              }
+              return quadOverlayFor(
+                style: s,
+                quad: quad,
+                status: status,
+                accent: _coral,
+                warning: _coralLight,
+              );
+            },
             captureButtonBuilder: (ctx, onTap) =>
                 _GradientShutter(onTap: onTap, animation: _halo),
             // Flash and debug readout handled by us below — passing
@@ -129,6 +188,28 @@ class _BrandedStyleScannerState extends State<BrandedStyleScanner>
                 children: [
                   _CloseDot(onTap: () => Navigator.of(context).maybePop()),
                   const Spacer(),
+                  _Chip(
+                    onTap: () => setState(() {
+                      _overlayIndex =
+                          (_overlayIndex + 1) % _overlayStyleOrder.length;
+                    }),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.layers_outlined,
+                          color: _cream,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _overlayStyleLabel(_overlayStyle),
+                          style: _mono(size: 10, color: _cream),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   AnimatedBuilder(
                     animation: _controller,
                     builder: (context, _) => _Chip(
@@ -233,14 +314,22 @@ class _HaloOverlay extends StatelessWidget {
     return AnimatedBuilder(
       animation: animation,
       builder: (context, _) => CustomPaint(
-        painter: _HaloPainter(quad: quad, status: status, t: animation.value),
+        painter: _HaloPainter(
+          quad: quad,
+          status: status,
+          t: animation.value,
+        ),
       ),
     );
   }
 }
 
 class _HaloPainter extends CustomPainter {
-  _HaloPainter({required this.quad, required this.status, required this.t});
+  _HaloPainter({
+    required this.quad,
+    required this.status,
+    required this.t,
+  });
   final Quad? quad;
   final DetectionStatus status;
   final double t;
@@ -375,42 +464,34 @@ class _GradientShutterState extends State<_GradientShutter>
           final breathing =
               0.5 + 0.5 * math.sin(widget.animation.value * 2 * math.pi);
           final pressScale = 1 - 0.08 * _press.value;
+          // Solid cream face with a thin coral ring — reads as the
+          // familiar iOS-style camera button while still feeling on-brand.
+          // The breathing coral halo carries the rhythm; the face itself
+          // stays calm so it doesn't fight the camera preview.
           return Transform.scale(
             scale: pressScale,
             child: Container(
-              width: 88,
-              height: 88,
+              width: 84,
+              height: 84,
+              padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: const [_coral, _coralLight, _cream],
-                  stops: [0.0, 0.55 + 0.15 * breathing, 1.0],
-                ),
+                color: _coral.withValues(alpha: 0.18 + 0.25 * breathing),
                 boxShadow: [
                   BoxShadow(
-                    color: _coral.withValues(alpha: 0.5 * breathing),
+                    color: _coral.withValues(alpha: 0.35 * breathing),
                     blurRadius: 28,
                     spreadRadius: 2,
                   ),
-                  BoxShadow(
-                    color: _cream.withValues(alpha: 0.2),
-                    blurRadius: 12,
-                  ),
                 ],
               ),
-              child: Center(
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _ink.withValues(alpha: 0.85),
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.fiber_manual_record,
-                        color: _coral, size: 12),
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _cream,
+                  border: Border.all(
+                    color: _coral.withValues(alpha: 0.55),
+                    width: 1.4,
                   ),
                 ),
               ),

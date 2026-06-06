@@ -32,20 +32,35 @@ for v0.1.**
 This decision is reversible — see `QuadDetector.detect()`; a future
 variant could ship as a separate package extension.
 
-## JPEG quality default: 92
+## JPEG quality default: 100
 
-Subjective sweet spot from comparing 80/90/92/95/100 on a set of
-receipts. 92 is visually indistinguishable from 100 in the dropoff tests
-while being ~3× smaller.
+Chose **100** because the most common downstream consumer of a scan is
+an OCR / extraction pipeline, and those benefit from the cleanest bytes
+we can give them. The size cost (a 3 MB JPEG vs ~1 MB at quality 92) is
+acceptable for documents that the user typically uploads once and
+forgets.
+
+Apps that scan to gallery / camera-roll style storage can drop the
+default to `~92` — visually indistinguishable from 100 in dropoff tests
+and ~3× smaller. The package's own `EditCornersScreen.warpImage` honours
+the same setting.
 
 ## Auto-capture defaults
 
-- `cornerThreshold = 8.0 px` in screen space — looser than 4 (too
-  jittery on real hands) but tighter than 16 (waits too long).
-- `stabilityDuration = 1500 ms` — short enough not to feel sluggish,
-  long enough to filter out brief hold-stills while reframing.
+- `cornerThreshold = 0.02` — fraction of the normalised `[0, 1]`
+  preview coordinate space, i.e. "no corner moved more than 2 % of the
+  frame between consecutive emitted frames." Tighter values demand a
+  tripod-steady hand; looser values fire on noticeably shaky hands but
+  risk motion-blurred captures.
+- `stabilityDuration = 800 ms` — handheld scanning is never perfectly
+  still. 800 ms at 2 % jitter is a realistic, snappy target.
+- `confirmationDelay = 350 ms` — the "hold still, about to shoot"
+  cue. Long enough that the user can abort by moving the camera, short
+  enough that the perceived shutter rhythm matches VisionKit's native
+  scanner.
 
-These are the values to revisit during real-device tuning.
+Total time from "looks like a document" to shutter is roughly
+`stabilityDuration + confirmationDelay` ≈ 1.15 s.
 
 ## iOS Vision orientation
 
@@ -130,3 +145,32 @@ of getting it wrong is high (silent auto-capture failure) and the symptom
 ("worked yesterday, broken today, no visible code change") is exactly
 the kind of regression worth a named decision so future-us doesn't
 collapse them back into a single field.
+
+## Tap-to-focus coordinate transforms
+
+**iOS** — `AVCaptureDevice.focusPointOfInterest` is in the sensor's
+**landscape** orientation, origin top-left when the device is held
+landscape-left. Independent of the connection's `videoOrientation`. So
+a Flutter tap at portrait-normalised `(x, y)` maps to:
+
+- Back camera: `(sensorX, sensorY) = (y, 1 - x)`
+- Front camera: `(sensorX, sensorY) = (y, x)` (already mirrored on the
+  connection, do not double-mirror here)
+
+After the one-shot focus completes we drop back to
+`.continuousAutoFocus` after 3 s — matches Apple's HIG and CameraX's
+default auto-cancel duration.
+
+**Android** — CameraX exposes `SurfaceOrientedMeteringPointFactory` for
+preview surfaces whose dimensions we control. We use the
+`SurfaceRequest.resolution` returned for the Preview use case as the
+factory's surface size; the user's tap, in `(textureWidth,
+textureHeight)` space, is fed directly to `factory.createPoint(x, y)`.
+This is the documented factory for `Texture`-based previews — using
+`DisplayOrientedMeteringPointFactory` would be wrong because we don't
+have a `PreviewView`.
+
+References:
+- [`AVCaptureDevice.focusPointOfInterest`](https://developer.apple.com/documentation/avfoundation/avcapturedevice/1385853-focuspointofinterest)
+- [`SurfaceOrientedMeteringPointFactory`](https://developer.android.com/reference/androidx/camera/core/SurfaceOrientedMeteringPointFactory)
+- [`CameraControl.startFocusAndMetering`](https://developer.android.com/reference/androidx/camera/core/CameraControl#startFocusAndMetering(androidx.camera.core.FocusMeteringAction))

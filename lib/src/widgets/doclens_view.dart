@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../models.dart';
 import '../quad.dart';
+import 'quad_overlay.dart';
 
 typedef QuadOverlayBuilder = Widget Function(
     BuildContext context, Quad? quad, DetectionStatus status);
@@ -53,9 +54,18 @@ class DoclensView extends StatefulWidget {
   final void Function(Object error, StackTrace stack)? onError;
   final Color backgroundColor;
 
+  /// Reasonable default overlay: tinted, stroked polygon whose colour
+  /// follows the [DetectionStatus] (acid-lime accent on aligned /
+  /// confirming, amber on tilted / too-close / too-far, muted white
+  /// while searching).
+  ///
+  /// Internally this is just `QuadOverlay.filled` with the package's
+  /// default palette. Swap to any other [QuadOverlay] constructor — or
+  /// the [quadOverlayFor] helper with a [QuadOverlayStyle] enum value —
+  /// for a different look.
   static Widget defaultOverlayBuilder(
       BuildContext context, Quad? quad, DetectionStatus status) {
-    return _DefaultQuadOverlay(quad: quad, status: status);
+    return QuadOverlay.filled(quad: quad, status: status);
   }
 
   static Widget defaultCaptureButton(
@@ -297,65 +307,6 @@ class _DoclensViewState extends State<DoclensView>
 }
 
 // ---- default UI bits ---------------------------------------------------
-
-class _DefaultQuadOverlay extends StatelessWidget {
-  const _DefaultQuadOverlay({required this.quad, required this.status});
-  final Quad? quad;
-  final DetectionStatus status;
-
-  Color _color() {
-    switch (status) {
-      case DetectionStatus.confirming:
-        // Brighter / fully saturated green for the brief "about to shoot"
-        // window — visually distinct from plain `aligned`.
-        return const Color(0xFF00E676);
-      case DetectionStatus.aligned:
-        return const Color(0xFF34C759);
-      case DetectionStatus.tilted:
-      case DetectionStatus.tooClose:
-      case DetectionStatus.tooFar:
-        return const Color(0xFFFFCC00);
-      case DetectionStatus.searching:
-      case DetectionStatus.noPaper:
-        return Colors.white.withValues(alpha: 0.6);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: _QuadPainter(quad: quad, color: _color()));
-  }
-}
-
-class _QuadPainter extends CustomPainter {
-  _QuadPainter({required this.quad, required this.color});
-  final Quad? quad;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final q = quad;
-    if (q == null) return;
-    final scaled = q.scaleToSize(size);
-    final path = Path()
-      ..moveTo(scaled.topLeft.dx, scaled.topLeft.dy)
-      ..lineTo(scaled.topRight.dx, scaled.topRight.dy)
-      ..lineTo(scaled.bottomRight.dx, scaled.bottomRight.dy)
-      ..lineTo(scaled.bottomLeft.dx, scaled.bottomLeft.dy)
-      ..close();
-    final stroke = Paint()
-      ..color = color
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke;
-    final fill = Paint()..color = color.withValues(alpha: 0.15);
-    canvas.drawPath(path, fill);
-    canvas.drawPath(path, stroke);
-  }
-
-  @override
-  bool shouldRepaint(covariant _QuadPainter old) =>
-      old.quad != quad || old.color != color;
-}
 
 class _DefaultCaptureButton extends StatelessWidget {
   const _DefaultCaptureButton({required this.onTap});

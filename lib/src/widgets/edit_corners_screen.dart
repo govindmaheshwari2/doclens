@@ -65,58 +65,82 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
         backgroundColor: Colors.black,
-        title: Text(widget.title),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: widget.onCancel ?? () => Navigator.of(context).maybePop(),
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          title: Text(widget.title),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed:
+                widget.onCancel ?? () => Navigator.of(context).maybePop(),
+          ),
         ),
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final fit = _fitImage(widget.imageSize, constraints.biggest);
-          return Stack(
-            children: [
-              Positioned(
-                left: fit.dstOffset.dx,
-                top: fit.dstOffset.dy,
-                width: fit.dstSize.width,
-                height: fit.dstSize.height,
-                child: Image.file(File(widget.imagePath), fit: BoxFit.fill),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            // Inset the fittable area so handles near the photo edge sit
+            // comfortably away from the screen edges — much easier to grab
+            // a top-left handle when the image isn't flush with the bezel.
+            // The handle clamping in `_buildHandle` uses `fit.dstOffset` /
+            // `fit.dstSize`, so the inset is honoured automatically.
+            const horizontalInset = 24.0;
+            const topInset = 12.0;
+            const bottomInset = 96.0; // room for the Reset / Save row
+            final inner = Size(
+              math.max(0, constraints.maxWidth - horizontalInset * 2),
+              math.max(0, constraints.maxHeight - topInset - bottomInset),
+            );
+            final innerFit = _fitImage(widget.imageSize, inner);
+            // Translate the fit back into widget coordinates.
+            final fit = _ImageFit(
+              dstOffset: Offset(
+                innerFit.dstOffset.dx + horizontalInset,
+                innerFit.dstOffset.dy + topInset,
               ),
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _CornerLinesPainter(
-                    quad: _quad,
-                    fit: fit,
-                    lineColor: widget.lineColor,
-                    lineWidth: widget.lineWidth,
-                    surroundColor: widget.surroundColor,
+              dstSize: innerFit.dstSize,
+              scaleX: innerFit.scaleX,
+              scaleY: innerFit.scaleY,
+            );
+            return Stack(
+              children: [
+                Positioned(
+                  left: fit.dstOffset.dx,
+                  top: fit.dstOffset.dy,
+                  width: fit.dstSize.width,
+                  height: fit.dstSize.height,
+                  child: Image.file(File(widget.imagePath), fit: BoxFit.fill),
+                ),
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _CornerLinesPainter(
+                      quad: _quad,
+                      fit: fit,
+                      lineColor: widget.lineColor,
+                      lineWidth: widget.lineWidth,
+                      surroundColor: widget.surroundColor,
+                    ),
                   ),
                 ),
-              ),
-              ..._buildHandles(fit, constraints.biggest),
-              Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _button(
-                        context,
-                        'Reset',
-                        () => setState(() => _quad = widget.initialQuad)),
-                    _button(context, _saving ? 'Saving…' : 'Save', _onSave),
-                  ],
+                ..._buildHandles(fit, constraints.biggest),
+                Positioned(
+                  bottom: 24,
+                  left: 0,
+                  right: 0,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _button(context, 'Reset',
+                          () => setState(() => _quad = widget.initialQuad)),
+                      _button(context, _saving ? 'Saving…' : 'Save', _onSave),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -125,7 +149,8 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
     if (widget.buttonBuilder != null) {
       return widget.buttonBuilder!(context, onTap, label);
     }
-    return ElevatedButton(onPressed: _saving ? null : onTap, child: Text(label));
+    return ElevatedButton(
+        onPressed: _saving ? null : onTap, child: Text(label));
   }
 
   Future<void> _onSave() async {
@@ -140,30 +165,42 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
 
   List<Widget> _buildHandles(_ImageFit fit, Size widgetSize) {
     final pts = [
-      (_quad.topLeft, (Offset p) => _quad = Quad(
-            topLeft: p,
-            topRight: _quad.topRight,
-            bottomRight: _quad.bottomRight,
-            bottomLeft: _quad.bottomLeft,
-          )),
-      (_quad.topRight, (Offset p) => _quad = Quad(
-            topLeft: _quad.topLeft,
-            topRight: p,
-            bottomRight: _quad.bottomRight,
-            bottomLeft: _quad.bottomLeft,
-          )),
-      (_quad.bottomRight, (Offset p) => _quad = Quad(
-            topLeft: _quad.topLeft,
-            topRight: _quad.topRight,
-            bottomRight: p,
-            bottomLeft: _quad.bottomLeft,
-          )),
-      (_quad.bottomLeft, (Offset p) => _quad = Quad(
-            topLeft: _quad.topLeft,
-            topRight: _quad.topRight,
-            bottomRight: _quad.bottomRight,
-            bottomLeft: p,
-          )),
+      (
+        _quad.topLeft,
+        (Offset p) => _quad = Quad(
+              topLeft: p,
+              topRight: _quad.topRight,
+              bottomRight: _quad.bottomRight,
+              bottomLeft: _quad.bottomLeft,
+            )
+      ),
+      (
+        _quad.topRight,
+        (Offset p) => _quad = Quad(
+              topLeft: _quad.topLeft,
+              topRight: p,
+              bottomRight: _quad.bottomRight,
+              bottomLeft: _quad.bottomLeft,
+            )
+      ),
+      (
+        _quad.bottomRight,
+        (Offset p) => _quad = Quad(
+              topLeft: _quad.topLeft,
+              topRight: _quad.topRight,
+              bottomRight: p,
+              bottomLeft: _quad.bottomLeft,
+            )
+      ),
+      (
+        _quad.bottomLeft,
+        (Offset p) => _quad = Quad(
+              topLeft: _quad.topLeft,
+              topRight: _quad.topRight,
+              bottomRight: _quad.bottomRight,
+              bottomLeft: p,
+            )
+      ),
     ];
     return [
       for (final (point, setter) in pts)
@@ -187,8 +224,8 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
           setState(() {
             final newWidgetPos = widgetPos + details.delta;
             final clamped = Offset(
-              newWidgetPos.dx
-                  .clamp(fit.dstOffset.dx, fit.dstOffset.dx + fit.dstSize.width),
+              newWidgetPos.dx.clamp(
+                  fit.dstOffset.dx, fit.dstOffset.dx + fit.dstSize.width),
               newWidgetPos.dy.clamp(
                   fit.dstOffset.dy, fit.dstOffset.dy + fit.dstSize.height),
             );
@@ -282,8 +319,7 @@ class _CornerLinesPainter extends CustomPainter {
       ..lineTo(bl.dx, bl.dy)
       ..close();
 
-    final outer = Path()
-      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
+    final outer = Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
     final dim = Path.combine(ui.PathOperation.difference, outer, quadPath);
     canvas.drawPath(dim, Paint()..color = surroundColor);
 

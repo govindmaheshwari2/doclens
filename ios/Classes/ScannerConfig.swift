@@ -19,7 +19,7 @@ struct ScannerConfig {
             enableLiveDetection: map["enableLiveDetection"] as? Bool ?? true,
             detectionThrottleHz: map["detectionThrottleHz"] as? Int ?? 12,
             enablePerspectiveWarp: map["enablePerspectiveWarp"] as? Bool ?? true,
-            jpegQuality: map["jpegQuality"] as? Int ?? 92,
+            jpegQuality: map["jpegQuality"] as? Int ?? 100,
             outputFormat: map["outputFormat"] as? String ?? "jpeg",
             captureResolution: map["captureResolution"] as? String ?? "high",
             initialFlashMode: map["initialFlashMode"] as? String ?? "auto",
