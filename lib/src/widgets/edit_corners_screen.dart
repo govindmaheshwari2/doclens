@@ -30,6 +30,11 @@ class EditCornersScreen extends StatefulWidget {
     this.surroundColor = const Color(0x99000000),
     this.handleRadius = 28.0,
     this.title = 'Adjust corners',
+    this.resetLabel = 'Reset',
+    this.saveLabel = 'Continue',
+    this.savingLabel = 'Saving…',
+    this.buttonStyle,
+    this.buttonTextStyle,
   });
 
   /// File path to the raw uncropped image.
@@ -54,6 +59,11 @@ class EditCornersScreen extends StatefulWidget {
   final Color surroundColor;
   final double handleRadius;
   final String title;
+  final String resetLabel;
+  final String saveLabel;
+  final String savingLabel;
+  final ButtonStyle? buttonStyle;
+  final TextStyle? buttonTextStyle;
 
   @override
   State<EditCornersScreen> createState() => _EditCornersScreenState();
@@ -139,10 +149,10 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
                   right: 16,
                   child: Row(
                     children: [
-                      Expanded(child: _button(context, 'Reset',
+                      Expanded(child: _button(context, widget.resetLabel,
                           () => setState(() => _quad = widget.initialQuad))),
                       const SizedBox(width: 12),
-                      Expanded(child: _button(context, _saving ? 'Saving…' : 'Continue', _onSave)),
+                      Expanded(child: _button(context, _saving ? widget.savingLabel : widget.saveLabel, _onSave)),
                     ],
                   ),
                 ),
@@ -159,7 +169,10 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
       return widget.buttonBuilder!(context, onTap, label);
     }
     return ElevatedButton(
-        onPressed: _saving ? null : onTap, child: Text(label));
+      onPressed: _saving ? null : onTap,
+      style: widget.buttonStyle,
+      child: Text(label, style: widget.buttonTextStyle),
+    );
   }
 
   Future<void> _onSave() async {
