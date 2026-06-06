@@ -71,9 +71,18 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
         backgroundColor: Colors.black,
         appBar: AppBar(
           backgroundColor: Colors.black,
-          title: Text(widget.title),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          title: Text(
+            widget.title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           leading: IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(Icons.close, color: Colors.white),
             onPressed:
                 widget.onCancel ?? () => Navigator.of(context).maybePop(),
           ),
@@ -126,14 +135,14 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
                 ..._buildHandles(fit, constraints.biggest),
                 Positioned(
                   bottom: 24,
-                  left: 0,
-                  right: 0,
+                  left: 16,
+                  right: 16,
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _button(context, 'Reset',
-                          () => setState(() => _quad = widget.initialQuad)),
-                      _button(context, _saving ? 'Saving…' : 'Save', _onSave),
+                      Expanded(child: _button(context, 'Reset',
+                          () => setState(() => _quad = widget.initialQuad))),
+                      const SizedBox(width: 12),
+                      Expanded(child: _button(context, _saving ? 'Saving…' : 'Continue', _onSave)),
                     ],
                   ),
                 ),
@@ -157,7 +166,8 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      await widget.onSave(_quad);
+      final warpedPath = await widget.onSave(_quad);
+      if (mounted) Navigator.of(context).pop(warpedPath);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
