@@ -1,4 +1,16 @@
-## 0.1.0
+## 0.0.2
+
+**EditCornersScreen**
+
+- AppBar styled with white foreground, no elevation, and weighted title text.
+- Bottom buttons are now full-width (`Expanded`) with 12 px gap between them.
+- `onSave` return value (warped image path) is passed back via `Navigator.pop`.
+- New parameters: `resetLabel`, `saveLabel`, `savingLabel` — customise button
+  text without supplying a full `buttonBuilder`.
+- New parameters: `buttonStyle` (`ButtonStyle?`) and `buttonTextStyle`
+  (`TextStyle?`) — style the default buttons without a custom builder.
+
+## 0.0.1
 
 Initial release.
 
