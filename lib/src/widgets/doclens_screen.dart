@@ -1679,22 +1679,7 @@ class _PrimaryButton extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: _mono(
-                size: 13.5,
-                color: _kBgInk,
-                weight: FontWeight.w600,
-                letterSpacing: 0.0,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward, color: _kBgInk, size: 16),
-          ],
-        ),
+        child: const Icon(Icons.arrow_forward, color: _kBgInk, size: 16),
       ),
     );
   }

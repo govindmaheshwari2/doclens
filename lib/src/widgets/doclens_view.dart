@@ -220,10 +220,22 @@ class _DoclensViewState extends State<DoclensView>
         ),
       );
     } else {
-      // Buffer size not known yet — show the texture stretched as a
-      // fallback. The quad overlay is suppressed for this brief window
-      // to avoid drawing in the wrong place.
-      previewLayer = Texture(textureId: textureId);
+      // Buffer size not known yet (the native previewSize event hasn't
+      // landed). Fill the parent with the texture and the overlay in the
+      // same rect — the overlay's corners are normalized [0,1] so they
+      // align to whatever box they're painted into. Without rendering the
+      // overlay here, it's missing for the whole window between the first
+      // camera frame and the first previewSize event.
+      previewLayer = Stack(
+        fit: StackFit.expand,
+        children: [
+          Texture(textureId: textureId),
+          if (widget.overlayBuilder != null)
+            IgnorePointer(
+              child: widget.overlayBuilder!(context, _quad, _status),
+            ),
+        ],
+      );
     }
 
     return ColoredBox(

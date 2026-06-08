@@ -1,3 +1,27 @@
+## 0.0.3
+
+**Android preview no longer stretches**
+
+- The live preview now reports its size in the rotated (displayed)
+  orientation instead of the sensor-natural landscape buffer size, so a
+  portrait preview fills a portrait screen without `BoxFit.cover`
+  stretching it. Driven off CameraX's `setTransformationInfoListener`,
+  with identical sizes deduped and 0x0 events dropped so a stale or
+  repeat emission can't corrupt the layout.
+
+**Overlay shows from the first frame**
+
+- `DoclensView` now paints the quad overlay during the brief window
+  between the first camera frame and the first `previewSize` event.
+  Previously the overlay was missing for that window; the corners are
+  normalized `[0,1]` so they align to the texture rect immediately.
+
+**Primary button**
+
+- The default primary button in `DoclensScreen` is now icon-only
+  (forward arrow), dropping the inline label + icon row for a cleaner
+  control.
+
 ## 0.0.2
 
 **EditCornersScreen**

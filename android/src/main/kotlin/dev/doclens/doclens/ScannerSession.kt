@@ -51,6 +51,8 @@ class ScannerSession(
     @Volatile private var lastDetectionMs: Long = 0L
     @Volatile private var previewSurfaceWidth: Int = 0
     @Volatile private var previewSurfaceHeight: Int = 0
+    @Volatile private var lastEmittedPreviewW: Int = 0
+    @Volatile private var lastEmittedPreviewH: Int = 0
 
     init {
         lensFacing = if (config.initialLens == "front") CameraSelector.LENS_FACING_FRONT
@@ -102,11 +104,37 @@ class ScannerSession(
                 previewSurfaceWidth = res.width
                 previewSurfaceHeight = res.height
                 surfaceTexture.setDefaultBufferSize(res.width, res.height)
-                // Report the SurfaceTexture buffer dimensions as the
-                // preview size — Flutter renders these pixels as-is.
-                eventSink(mapOf(
-                    "previewSize" to listOf(res.width.toDouble(), res.height.toDouble()),
-                ))
+
+                // `request.resolution` is the sensor-natural buffer size, which
+                // is landscape (e.g. 1920x1080). CameraX rotates the buffer to
+                // the display orientation before it reaches the SurfaceTexture,
+                // so the pixels Flutter renders are upright. Report the size in
+                // that rotated orientation — for a 90/270 rotation the displayed
+                // size is the transpose — otherwise Flutter's BoxFit.cover scales
+                // a landscape box onto a portrait screen and the preview stretches.
+                //
+                // The transformation info can fire more than once per bind (and
+                // again on every resume()). Dedupe identical sizes so a repeat
+                // emission with the same orientation is a no-op, and never emit
+                // a 0x0 — both would let a transient/stale event corrupt the
+                // layout the Flutter side already computed.
+                request.setTransformationInfoListener(
+                    ContextCompat.getMainExecutor(context)
+                ) { info ->
+                    val swap = info.rotationDegrees % 180 != 0
+                    val w = if (swap) res.height else res.width
+                    val h = if (swap) res.width else res.height
+                    if (w <= 0 || h <= 0) return@setTransformationInfoListener
+                    if (w == lastEmittedPreviewW && h == lastEmittedPreviewH) {
+                        return@setTransformationInfoListener
+                    }
+                    lastEmittedPreviewW = w
+                    lastEmittedPreviewH = h
+                    eventSink(mapOf(
+                        "previewSize" to listOf(w.toDouble(), h.toDouble()),
+                    ))
+                }
+
                 val surface = android.view.Surface(surfaceTexture)
                 request.provideSurface(surface, ContextCompat.getMainExecutor(context)) {
                     surface.release()
