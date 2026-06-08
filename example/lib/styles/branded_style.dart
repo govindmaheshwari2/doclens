@@ -121,8 +121,13 @@ class _BrandedStyleScannerState extends State<BrandedStyleScanner>
     super.dispose();
   }
 
-  void _onCaptured(ScanResult r) {
-    Navigator.of(context).push(
+  Future<void> _onCaptured(ScanResult r) async {
+    // Pause the live session while the user reviews the capture — without
+    // this the camera keeps detecting and auto-capture re-fires on the
+    // result screen. Resume when they come back.
+    await _controller.pause().catchError((_) {});
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => ResultScreen(
           result: r,
@@ -131,6 +136,8 @@ class _BrandedStyleScannerState extends State<BrandedStyleScanner>
         ),
       ),
     );
+    if (!mounted) return;
+    await _controller.resume().catchError((_) {});
   }
 
   @override

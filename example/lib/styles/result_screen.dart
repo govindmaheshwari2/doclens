@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
 import 'package:doclens/doclens.dart';
+import 'package:flutter/material.dart';
 
 // =====================================================================
 //  Review screen used by the branded scanner.
@@ -181,9 +181,7 @@ class _Header extends StatelessWidget {
                       width: 6,
                       height: 6,
                       decoration: BoxDecoration(
-                        color: hasWarpError
-                            ? const Color(0xFFFF6B6B)
-                            : accent,
+                        color: hasWarpError ? const Color(0xFFFF6B6B) : accent,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -192,9 +190,7 @@ class _Header extends StatelessWidget {
                       hasWarpError ? 'CROP UNAVAILABLE' : 'CAPTURED',
                       style: _mono(
                         size: 10,
-                        color: hasWarpError
-                            ? const Color(0xFFFF6B6B)
-                            : accent,
+                        color: hasWarpError ? const Color(0xFFFF6B6B) : accent,
                         weight: FontWeight.w700,
                         letterSpacing: 0.28,
                       ),
@@ -345,12 +341,10 @@ class _CornerFrame extends CustomPainter {
     }
 
     corner(Offset.zero, const Offset(len, 0), const Offset(0, len));
-    corner(Offset(size.width, 0),
-        const Offset(-len, 0), const Offset(0, len));
-    corner(Offset(0, size.height),
-        const Offset(len, 0), const Offset(0, -len));
-    corner(Offset(size.width, size.height),
-        const Offset(-len, 0), const Offset(0, -len));
+    corner(Offset(size.width, 0), const Offset(-len, 0), const Offset(0, len));
+    corner(Offset(0, size.height), const Offset(len, 0), const Offset(0, -len));
+    corner(Offset(size.width, size.height), const Offset(-len, 0),
+        const Offset(0, -len));
   }
 
   @override
@@ -419,12 +413,11 @@ class _Actions extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _Ghost(label: 'Retake', icon: Icons.refresh, onTap: onRetake),
+          _Ghost(icon: Icons.refresh, onTap: onRetake),
           const SizedBox(width: 10),
-          _Ghost(
-              label: 'Edit corners', icon: Icons.crop, onTap: onEditCorners),
+          _Ghost(icon: Icons.crop, onTap: onEditCorners),
           const Spacer(),
-          _Primary(label: 'Use', accent: accent, onTap: onUse, busy: busy),
+          _Primary(accent: accent, onTap: onUse, busy: busy),
         ],
       ),
     );
@@ -432,9 +425,7 @@ class _Actions extends StatelessWidget {
 }
 
 class _Ghost extends StatelessWidget {
-  const _Ghost(
-      {required this.label, required this.icon, required this.onTap});
-  final String label;
+  const _Ghost({required this.icon, required this.onTap});
   final IconData icon;
   final VoidCallback onTap;
   @override
@@ -454,16 +445,6 @@ class _Ghost extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, color: _kTextSecondary, size: 16),
-            const SizedBox(width: 8),
-            Text(
-              label.toUpperCase(),
-              style: _mono(
-                size: 11,
-                color: _kTextPrimary,
-                weight: FontWeight.w600,
-                letterSpacing: 0.24,
-              ),
-            ),
           ],
         ),
       ),
@@ -473,12 +454,10 @@ class _Ghost extends StatelessWidget {
 
 class _Primary extends StatelessWidget {
   const _Primary({
-    required this.label,
     required this.accent,
     required this.onTap,
     required this.busy,
   });
-  final String label;
   final Color accent;
   final VoidCallback onTap;
   final bool busy;
@@ -503,22 +482,7 @@ class _Primary extends StatelessWidget {
                   ),
                 ],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label.toUpperCase(),
-              style: _mono(
-                size: 11.5,
-                color: _kInk,
-                weight: FontWeight.w700,
-                letterSpacing: 0.28,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward, color: _kInk, size: 16),
-          ],
-        ),
+        child: const Icon(Icons.arrow_forward, color: _kInk, size: 16),
       ),
     );
   }
