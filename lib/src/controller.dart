@@ -312,10 +312,26 @@ class DoclensController extends ChangeNotifier {
     return DoclensPlatform.instance.pause();
   }
 
+  /// Resume the live preview after a [pause].
+  ///
+  /// Resuming clears any carried-over stability/confirmation state and
+  /// applies a short auto-capture grace window ([resumeAutoCaptureGrace]).
+  /// Without this, a document still sitting aligned in frame from before the
+  /// pause would re-trip auto-capture within a frame or two of resuming —
+  /// giving the user no chance to reposition after a retake.
   Future<void> resume() {
     _ensureReady();
+    _cancelConfirmation();
+    _stability.reset();
+    _autoCaptureCooldownUntil = DateTime.now().add(resumeAutoCaptureGrace);
     return DoclensPlatform.instance.resume();
   }
+
+  /// How long after [resume] auto-capture stays suppressed so the user can
+  /// reframe before the scanner re-arms. The user must also hold the
+  /// document still again for [ScannerConfig.autoCaptureStabilityDuration]
+  /// once the grace elapses, because [resume] resets the stability tracker.
+  static const Duration resumeAutoCaptureGrace = Duration(milliseconds: 1200);
 
   void _ensureReady() {
     _ensureNotDisposed();
