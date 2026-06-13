@@ -1,3 +1,15 @@
+## 0.0.4
+
+**Resume grace window prevents immediate re-capture**
+
+- `DoclensController.resume()` now resets stability tracking and suppresses
+  auto-capture for 1 200 ms (`resumeAutoCaptureGrace`) after a resume. Without
+  this, a document still aligned in frame from before the pause would re-trip
+  auto-capture within a frame or two of resuming, giving the user no chance to
+  reposition after a retake.
+- Any in-progress confirmation phase is also cancelled on resume so the
+  two-stage capture timer starts fresh.
+
 ## 0.0.3
 
 **Android preview no longer stretches**
