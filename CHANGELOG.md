@@ -1,3 +1,17 @@
+## Unreleased
+
+**Android: crop lands in the wrong position after editing corners**
+
+- On Android, large captures are decoded downscaled (`decodeDownscaled`,
+  max 3000 px), so `rawImageSize` and the reported quad are in that
+  downscaled pixel space. When no EXIF rotation was needed, capture
+  returned the *original full-resolution* file as `rawImagePath` while
+  those coordinates described the downscaled image. A later re-warp via
+  `EditCornersScreen` decoded that file at full resolution and applied the
+  half-scale quad, cropping the wrong region (typically the top-left
+  quadrant). Capture now always persists the upright bitmap it measured,
+  so `rawImagePath`'s pixel dimensions match `rawImageSize` and the quad.
+
 ## 0.0.4
 
 **Resume grace window prevents immediate re-capture**
