@@ -304,13 +304,24 @@ class ScannerSession(
                     if (config.enablePerspectiveWarp && pixelQuad != null) {
                         croppedPath = ImageWarper.warp(rotated, pixelQuad, config.jpegQuality)
                     }
-                    val rawPathToReturn = if (rotated !== raw) {
-                        val out = File(context.cacheDir, "fnds_raw_rot_${System.currentTimeMillis()}.jpg")
+                    // Always persist the upright bitmap we actually measured
+                    // (`rotated`) so the returned rawImagePath's pixel
+                    // dimensions exactly match `rawImageSize` — and therefore
+                    // the reported quad. We can't return the original on-disk
+                    // file here: `decodeDownscaled` may have shrunk large
+                    // captures (e.g. 4000x3000 -> 2000x1500), so the original
+                    // file would be full-resolution while rawImageSize/quad
+                    // describe the downscaled space. A later re-warp via
+                    // EditCorners decodes that file at full resolution and
+                    // applies the half-scale quad, cropping the wrong region.
+                    val rawPathToReturn = run {
+                        val out = File(context.cacheDir, "fnds_raw_upright_${System.currentTimeMillis()}.jpg")
                         out.outputStream().use { rotated.compress(Bitmap.CompressFormat.JPEG, config.jpegQuality, it) }
-                        // Original on-disk file is now stale (orientation differs).
+                        // Original on-disk file is now stale (rotated and/or
+                        // downscaled relative to what we return).
                         file.delete()
                         out.absolutePath
-                    } else file.absolutePath
+                    }
 
                     val payload = mapOf(
                         "croppedImagePath" to croppedPath,
