@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -80,8 +81,8 @@ object ImageWarper {
      * the multiplicative model `image = reflectance × illumination`, dividing
      * by a smooth illumination estimate cancels uneven lighting and soft
      * shadows. `enhanced` keeps colour and whitens the background; the
-     * background estimate is sampled (nearest) from a tiny downscaled copy,
-     * which is a cheap stand-in for a very large blur kernel.
+     * background estimate is a tiny downscaled copy, bilinearly sampled per
+     * pixel — a cheap stand-in for a very large blur kernel.
      *
      * `blackAndWhite` adaptively thresholds luma against the local background
      * (white where `luma >= background_luma × ratio`, else black) — this is
@@ -100,68 +101,96 @@ object ImageWarper {
         val h = bmp.height
         if (w <= 0 || h <= 0) return
 
-        val px = IntArray(w * h)
-        bmp.getPixels(px, 0, w, 0, 0, w, h)
-
-        when (mode) {
-            "grayscale" -> {
-                for (i in px.indices) {
-                    val p = px[i]
+        if (mode == "grayscale") {
+            val row = IntArray(w)
+            for (y in 0 until h) {
+                bmp.getPixels(row, 0, w, 0, y, w, 1)
+                for (x in 0 until w) {
+                    val p = row[x]
                     val l = luma((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF)
-                    px[i] = (0xFF shl 24) or (l shl 16) or (l shl 8) or l
+                    row[x] = (0xFF shl 24) or (l shl 16) or (l shl 8) or l
                 }
+                bmp.setPixels(row, 0, w, 0, y, w, 1)
             }
-            "enhanced", "blackAndWhite" -> {
-                // Smooth background illumination estimate. Downscaling to ~80px
-                // on the long edge averages away the text and keeps only the
-                // lighting gradient; we sample it back (nearest) per pixel
-                // without ever allocating a full-size background bitmap.
-                val targetMax = 80
-                val factor = max(1, max(w, h) / targetMax)
-                val sw = max(1, w / factor)
-                val sh = max(1, h / factor)
-                val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
-                val bg = IntArray(sw * sh)
-                small.getPixels(bg, 0, sw, 0, 0, sw, sh)
-                small.recycle()
-
-                val blackAndWhite = mode == "blackAndWhite"
-                // ~0.85 keeps faint strokes while clearing background speckle;
-                // equivalent to a positive C offset in adaptive-mean threshold.
-                val bwRatio = 0.85f
-                for (y in 0 until h) {
-                    val sy = (y * sh / h).coerceIn(0, sh - 1)
-                    val rowS = sy * sw
-                    val rowD = y * w
-                    for (x in 0 until w) {
-                        val sx = (x * sw / w).coerceIn(0, sw - 1)
-                        val b = bg[rowS + sx]
-                        val d = px[rowD + x]
-                        val sr = (d shr 16) and 0xFF
-                        val sg = (d shr 8) and 0xFF
-                        val sb = d and 0xFF
-                        if (blackAndWhite) {
-                            val sl = luma(sr, sg, sb)
-                            val bl = luma((b shr 16) and 0xFF, (b shr 8) and 0xFF, b and 0xFF)
-                            val ratio = if (bl > 0) sl.toFloat() / bl else 1f
-                            val o = if (ratio >= bwRatio) 0xFF else 0x00
-                            px[rowD + x] = (0xFF shl 24) or (o shl 16) or (o shl 8) or o
-                        } else {
-                            val br = (b shr 16) and 0xFF
-                            val bgc = (b shr 8) and 0xFF
-                            val bb = b and 0xFF
-                            val rr = if (br > 0) (sr * 255 / br).coerceAtMost(255) else 255
-                            val rg = if (bgc > 0) (sg * 255 / bgc).coerceAtMost(255) else 255
-                            val rb = if (bb > 0) (sb * 255 / bb).coerceAtMost(255) else 255
-                            px[rowD + x] = (0xFF shl 24) or (rr shl 16) or (rg shl 8) or rb
-                        }
-                    }
-                }
-            }
-            else -> return
+            return
         }
+        if (mode != "enhanced" && mode != "blackAndWhite") return
 
-        bmp.setPixels(px, 0, w, 0, 0, w, h)
+        // Smooth background illumination estimate: downscale away the text
+        // (keeping only the lighting gradient) into a tiny bitmap, then read
+        // its pixels once. `factor` is clamped to >= 2 so the downscale always
+        // produces a strictly smaller bitmap — `createScaledBitmap` returns
+        // the *same* instance when the size is unchanged, which would later
+        // recycle our output bitmap out from under us. We bilinearly sample
+        // this small map per pixel (cheap, and avoids a full-size background
+        // bitmap — keeping peak memory flat on large captures).
+        val targetMax = 80
+        val factor = max(2, max(w, h) / targetMax)
+        val sw = max(1, w / factor)
+        val sh = max(1, h / factor)
+        val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
+        val bg = IntArray(sw * sh)
+        small.getPixels(bg, 0, sw, 0, 0, sw, sh)
+        small.recycle()
+
+        val blackAndWhite = mode == "blackAndWhite"
+        // ~0.85 keeps faint strokes while clearing background speckle;
+        // equivalent to a positive C offset in adaptive-mean thresholding.
+        val bwRatio = 0.85f
+        // One width-sized scratch row; the background map stays tiny.
+        val row = IntArray(w)
+        for (y in 0 until h) {
+            bmp.getPixels(row, 0, w, 0, y, w, 1)
+            // Bilinear sample coordinates into the small map (pixel-centre
+            // aligned), with the row factors hoisted out of the inner loop.
+            val gy = (y + 0.5f) * sh / h - 0.5f
+            val fy = floor(gy).toInt()
+            val ty = (gy - fy).coerceIn(0f, 1f)
+            val y0 = fy.coerceIn(0, sh - 1)
+            val y1 = (fy + 1).coerceIn(0, sh - 1)
+            for (x in 0 until w) {
+                val gx = (x + 0.5f) * sw / w - 0.5f
+                val fx = floor(gx).toInt()
+                val tx = (gx - fx).coerceIn(0f, 1f)
+                val x0 = fx.coerceIn(0, sw - 1)
+                val x1 = (fx + 1).coerceIn(0, sw - 1)
+                val c00 = bg[y0 * sw + x0]
+                val c10 = bg[y0 * sw + x1]
+                val c01 = bg[y1 * sw + x0]
+                val c11 = bg[y1 * sw + x1]
+                val br = bilerp((c00 shr 16) and 0xFF, (c10 shr 16) and 0xFF,
+                                (c01 shr 16) and 0xFF, (c11 shr 16) and 0xFF, tx, ty)
+                val bgc = bilerp((c00 shr 8) and 0xFF, (c10 shr 8) and 0xFF,
+                                 (c01 shr 8) and 0xFF, (c11 shr 8) and 0xFF, tx, ty)
+                val bb = bilerp(c00 and 0xFF, c10 and 0xFF,
+                                c01 and 0xFF, c11 and 0xFF, tx, ty)
+
+                val d = row[x]
+                val sr = (d shr 16) and 0xFF
+                val sg = (d shr 8) and 0xFF
+                val sb = d and 0xFF
+                if (blackAndWhite) {
+                    val sl = luma(sr, sg, sb)
+                    val bl = luma(br, bgc, bb)
+                    val ratio = if (bl > 0) sl.toFloat() / bl else 1f
+                    val o = if (ratio >= bwRatio) 0xFF else 0x00
+                    row[x] = (0xFF shl 24) or (o shl 16) or (o shl 8) or o
+                } else {
+                    val rr = if (br > 0) (sr * 255 / br).coerceAtMost(255) else 255
+                    val rg = if (bgc > 0) (sg * 255 / bgc).coerceAtMost(255) else 255
+                    val rb = if (bb > 0) (sb * 255 / bb).coerceAtMost(255) else 255
+                    row[x] = (0xFF shl 24) or (rr shl 16) or (rg shl 8) or rb
+                }
+            }
+            bmp.setPixels(row, 0, w, 0, y, w, 1)
+        }
+    }
+
+    /** Bilinear interpolation of four corner samples; result clamped to [0,255]. */
+    private fun bilerp(c00: Int, c10: Int, c01: Int, c11: Int, tx: Float, ty: Float): Int {
+        val top = c00 + (c10 - c00) * tx
+        val bot = c01 + (c11 - c01) * tx
+        return (top + (bot - top) * ty).toInt().coerceIn(0, 255)
     }
 
     /** Rec.601 luma in [0, 255] using integer weights (77/150/29 ≈ /256). */

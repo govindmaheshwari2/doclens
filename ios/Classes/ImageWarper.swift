@@ -74,7 +74,7 @@ enum ImageWarper {
         // Optional post-warp enhancement. The filters used preserve the
         // extent, so we keep rendering from the geometry extent computed
         // above.
-        let enhanced = applyEnhancement(out, mode: enhancement, extent: extent)
+        let enhanced = applyEnhancement(out, mode: enhancement)
         guard let cg = ciContext.createCGImage(enhanced, from: extent) else {
             throw ImageWarperError.warpFailed("CGImage render failed (extent=\(extent))")
         }
@@ -91,22 +91,23 @@ enum ImageWarper {
     ///
     /// `enhanced` and `blackAndWhite` lean on `CIDocumentEnhancer` (iOS 16+),
     /// Apple's built-in document cleanup that removes shadows, whitens the
-    /// background, and boosts contrast. `blackAndWhite` then binarises with
-    /// `CIColorThresholdOtsu` (iOS 14+). On older OSes we fall back to a
-    /// manual illumination-division (`flatten`) using a large box blur and
-    /// `CIDivideBlendMode`, mirroring the Android pixel pipeline. `grayscale`
-    /// is a plain global desaturate.
-    private static func applyEnhancement(_ image: CIImage, mode: String,
-                                         extent: CGRect) -> CIImage {
+    /// background, and boosts contrast. `blackAndWhite` desaturates then
+    /// binarises with `CIColorThresholdOtsu` (iOS 14+). On older OSes we fall
+    /// back to `CIHighlightShadowAdjust`, which locally lifts shadow detail.
+    /// `grayscale` is a plain global desaturate.
+    private static func applyEnhancement(_ image: CIImage, mode: String) -> CIImage {
         switch mode {
         case "grayscale":
             return colorControls(image, saturation: 0, brightness: 0, contrast: 1.05)
         case "enhanced":
-            return documentEnhanced(image) ?? flatten(image, extent: extent)
+            return documentEnhanced(image) ?? shadowLift(image)
         case "blackAndWhite":
-            let cleaned = documentEnhanced(image) ?? flatten(image, extent: extent)
-            return binarize(cleaned)
-                ?? colorControls(cleaned, saturation: 0, brightness: 0, contrast: 2.4)
+            let cleaned = documentEnhanced(image) ?? shadowLift(image)
+            // Desaturate before Otsu so all three channels share one threshold
+            // — otherwise per-channel binarisation can leave colour fringes.
+            let gray = colorControls(cleaned, saturation: 0, brightness: 0, contrast: 1.0)
+            return binarize(gray)
+                ?? colorControls(gray, saturation: 0, brightness: 0, contrast: 2.4)
         default:
             return image
         }
@@ -135,22 +136,19 @@ enum ImageWarper {
         return nil
     }
 
-    /// Manual illumination flattening for OSes without `CIDocumentEnhancer`:
-    /// estimate the lighting with a large box blur, then divide it out
-    /// (`source / illumination`) so uneven lighting and soft shadows cancel.
-    /// The input is clamped so the blur doesn't darken edges, and the divided
-    /// result is cropped back to the document extent.
-    private static func flatten(_ image: CIImage, extent: CGRect) -> CIImage {
-        let radius = max(8.0, Double(min(extent.width, extent.height)) * 0.08)
-        guard let blurF = CIFilter(name: "CIBoxBlur") else { return image }
-        blurF.setValue(image.clampedToExtent(), forKey: kCIInputImageKey)
-        blurF.setValue(radius, forKey: kCIInputRadiusKey)
-        guard let illumination = blurF.outputImage?.cropped(to: extent) else { return image }
-        guard let divide = CIFilter(name: "CIDivideBlendMode") else { return image }
-        divide.setValue(image, forKey: kCIInputImageKey)
-        divide.setValue(illumination, forKey: kCIInputBackgroundImageKey)
-        let divided = divide.outputImage ?? image
-        return colorControls(divided, saturation: 1.1, brightness: 0, contrast: 1.1)
+    /// Fallback for OSes without `CIDocumentEnhancer`: `CIHighlightShadowAdjust`
+    /// is a locally/spatially adaptive tone mapping (it takes a radius and
+    /// "preserves spatial detail"), so it genuinely lifts shadow regions
+    /// rather than applying a global curve. Followed by a gentle
+    /// brighten/contrast to whiten the background.
+    private static func shadowLift(_ image: CIImage) -> CIImage {
+        guard let f = CIFilter(name: "CIHighlightShadowAdjust") else {
+            return colorControls(image, saturation: 1.05, brightness: 0.05, contrast: 1.1)
+        }
+        f.setValue(image, forKey: kCIInputImageKey)
+        f.setValue(0.8, forKey: "inputShadowAmount") // 0 (none) … 1 (max lift)
+        let lifted = f.outputImage ?? image
+        return colorControls(lifted, saturation: 1.05, brightness: 0.03, contrast: 1.1)
     }
 
     private static func colorControls(_ image: CIImage,

@@ -10,9 +10,9 @@
 - `enhanced` and `blackAndWhite` genuinely remove uneven lighting and soft
   shadows via on-device illumination-division ("flatten"), not just global
   contrast. No model is bundled and no extra dependency is added.
-  - iOS: Apple's `CIDocumentEnhancer` (iOS 16+) with a manual box-blur +
-    `CIDivideBlendMode` fallback on older OSes; `blackAndWhite` binarises
-    with `CIColorThresholdOtsu`.
+  - iOS: Apple's `CIDocumentEnhancer` (iOS 16+) with a `CIHighlightShadowAdjust`
+    fallback on older OSes; `blackAndWhite` desaturates then binarises with
+    `CIColorThresholdOtsu`.
   - Android: background estimated from a heavily downscaled copy and divided
     out per pixel; `blackAndWhite` uses adaptive-mean thresholding.
 - Applies to both the capture's cropped output and re-warps performed via
