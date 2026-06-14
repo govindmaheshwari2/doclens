@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.5
 
 **Android: crop lands in the wrong position after editing corners**
 
