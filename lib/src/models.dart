@@ -50,23 +50,32 @@ enum ImageFormat { jpeg, png }
 /// ([ScanResult.rawImagePath]) is always left untouched. It is applied both
 /// to the capture's cropped output and to re-warps performed via
 /// `EditCornersScreen`.
+///
+/// [enhanced] and [blackAndWhite] remove uneven lighting and soft shadows:
+/// on iOS via Apple's `CIDocumentEnhancer` (with a manual illumination-
+/// division fallback on older OSes), and on Android via an equivalent
+/// background-division ("flatten") pass. No model is bundled and no extra
+/// dependency is required.
 enum ImageEnhancement {
   /// No processing — the cropped output is the original pixels, just
   /// dewarped. Most faithful; best when you run your own preprocessing or
   /// want unmodified bytes for archival.
   none,
 
-  /// Desaturate to grayscale. Neutral tone, smaller files, and a calmer
-  /// look for mixed photo/text pages.
+  /// Desaturate to grayscale. A plain global desaturate (no shadow
+  /// handling) — neutral tone, smaller files, calmer look for mixed
+  /// photo/text pages.
   grayscale,
 
-  /// Boost contrast and saturation for a punchy, readable colour scan
-  /// ("magic colour"). Good general-purpose choice for legible photos of
-  /// documents shot in uneven lighting.
+  /// Shadow-corrected colour scan ("magic colour"): estimates the lighting
+  /// and divides it out so uneven illumination and soft shadows are removed
+  /// and the background is whitened, while colour is preserved. Good
+  /// general-purpose choice for photos of documents shot in uneven light.
   enhanced,
 
-  /// Desaturate and push contrast hard for a high-contrast, near-bitonal
-  /// "document" look. Best for plain text pages and for OCR on faint or
+  /// Shadow-corrected, near-bitonal "document" look: flattens the lighting
+  /// then thresholds locally (adaptive / Otsu) for clean black text on a
+  /// white background. Best for plain text pages and OCR on faint or
   /// low-contrast print.
   blackAndWhite,
 }

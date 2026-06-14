@@ -3,8 +3,6 @@ package dev.doclens.doclens
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
@@ -52,12 +50,11 @@ object ImageWarper {
         val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        // Apply optional enhancement in the same pass as the warp by tinting
-        // the source through a ColorMatrix — no extra full-frame allocation.
-        colorMatrixFor(enhancement)?.let {
-            paint.colorFilter = ColorMatrixColorFilter(it)
-        }
         canvas.drawBitmap(bitmap, matrix, paint)
+
+        // Optional post-warp enhancement (shadow-aware). Operates on the
+        // cropped pixels in place; `none` is a no-op.
+        enhanceInPlace(out, enhancement)
 
         val tmp = File.createTempFile("fnds_cropped_", ".jpg")
         FileOutputStream(tmp).use { stream ->
@@ -75,31 +72,99 @@ object ImageWarper {
     }
 
     /**
-     * Builds the ColorMatrix for a given enhancement mode, or null for
-     * `none` (no colour processing). Values mirror the iOS CIColorControls
-     * settings so both platforms produce a comparable look.
+     * Applies a shadow-aware enhancement to the cropped bitmap, in place.
+     *
+     * `enhanced` and `blackAndWhite` first estimate the per-pixel background
+     * illumination — a heavily downscaled, smoothed copy of the image — and
+     * divide it out. This is the classic Retinex/"flatten" correction: under
+     * the multiplicative model `image = reflectance × illumination`, dividing
+     * by a smooth illumination estimate cancels uneven lighting and soft
+     * shadows. `enhanced` keeps colour and whitens the background; the
+     * background estimate is sampled (nearest) from a tiny downscaled copy,
+     * which is a cheap stand-in for a very large blur kernel.
+     *
+     * `blackAndWhite` adaptively thresholds luma against the local background
+     * (white where `luma >= background_luma × ratio`, else black) — this is
+     * the no-OpenCV equivalent of OpenCV's `ADAPTIVE_THRESH_MEAN_C`, which
+     * tolerates shadows where a single global (Otsu) threshold fails.
+     *
+     * `grayscale` is a plain global desaturate (no shadow handling). `none`
+     * is a no-op.
+     *
+     * iOS performs the equivalent step with `CIDocumentEnhancer` /
+     * `CIColorThresholdOtsu`; see `ImageWarper.swift`.
      */
-    private fun colorMatrixFor(enhancement: String): ColorMatrix? = when (enhancement) {
-        "grayscale" -> ColorMatrix().apply { setSaturation(0f) }
-        "enhanced" -> contrastMatrix(1.2f).apply { postConcat(ColorMatrix().apply { setSaturation(1.1f) }) }
-        "blackAndWhite" -> ColorMatrix().apply {
-            setSaturation(0f)
-            postConcat(contrastMatrix(2.2f))
+    private fun enhanceInPlace(bmp: Bitmap, mode: String) {
+        if (mode == "none" || mode.isEmpty()) return
+        val w = bmp.width
+        val h = bmp.height
+        if (w <= 0 || h <= 0) return
+
+        val px = IntArray(w * h)
+        bmp.getPixels(px, 0, w, 0, 0, w, h)
+
+        when (mode) {
+            "grayscale" -> {
+                for (i in px.indices) {
+                    val p = px[i]
+                    val l = luma((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF)
+                    px[i] = (0xFF shl 24) or (l shl 16) or (l shl 8) or l
+                }
+            }
+            "enhanced", "blackAndWhite" -> {
+                // Smooth background illumination estimate. Downscaling to ~80px
+                // on the long edge averages away the text and keeps only the
+                // lighting gradient; we sample it back (nearest) per pixel
+                // without ever allocating a full-size background bitmap.
+                val targetMax = 80
+                val factor = max(1, max(w, h) / targetMax)
+                val sw = max(1, w / factor)
+                val sh = max(1, h / factor)
+                val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
+                val bg = IntArray(sw * sh)
+                small.getPixels(bg, 0, sw, 0, 0, sw, sh)
+                small.recycle()
+
+                val blackAndWhite = mode == "blackAndWhite"
+                // ~0.85 keeps faint strokes while clearing background speckle;
+                // equivalent to a positive C offset in adaptive-mean threshold.
+                val bwRatio = 0.85f
+                for (y in 0 until h) {
+                    val sy = (y * sh / h).coerceIn(0, sh - 1)
+                    val rowS = sy * sw
+                    val rowD = y * w
+                    for (x in 0 until w) {
+                        val sx = (x * sw / w).coerceIn(0, sw - 1)
+                        val b = bg[rowS + sx]
+                        val d = px[rowD + x]
+                        val sr = (d shr 16) and 0xFF
+                        val sg = (d shr 8) and 0xFF
+                        val sb = d and 0xFF
+                        if (blackAndWhite) {
+                            val sl = luma(sr, sg, sb)
+                            val bl = luma((b shr 16) and 0xFF, (b shr 8) and 0xFF, b and 0xFF)
+                            val ratio = if (bl > 0) sl.toFloat() / bl else 1f
+                            val o = if (ratio >= bwRatio) 0xFF else 0x00
+                            px[rowD + x] = (0xFF shl 24) or (o shl 16) or (o shl 8) or o
+                        } else {
+                            val br = (b shr 16) and 0xFF
+                            val bgc = (b shr 8) and 0xFF
+                            val bb = b and 0xFF
+                            val rr = if (br > 0) (sr * 255 / br).coerceAtMost(255) else 255
+                            val rg = if (bgc > 0) (sg * 255 / bgc).coerceAtMost(255) else 255
+                            val rb = if (bb > 0) (sb * 255 / bb).coerceAtMost(255) else 255
+                            px[rowD + x] = (0xFF shl 24) or (rr shl 16) or (rg shl 8) or rb
+                        }
+                    }
+                }
+            }
+            else -> return
         }
-        else -> null
+
+        bmp.setPixels(px, 0, w, 0, 0, w, h)
     }
 
-    /**
-     * A contrast-only matrix around the 8-bit mid-grey point: each channel is
-     * scaled by [c] and offset so 128 stays fixed. `c > 1` increases contrast.
-     */
-    private fun contrastMatrix(c: Float): ColorMatrix {
-        val t = (1f - c) * 128f
-        return ColorMatrix(floatArrayOf(
-            c, 0f, 0f, 0f, t,
-            0f, c, 0f, 0f, t,
-            0f, 0f, c, 0f, t,
-            0f, 0f, 0f, 1f, 0f,
-        ))
-    }
+    /** Rec.601 luma in [0, 255] using integer weights (77/150/29 ≈ /256). */
+    private fun luma(r: Int, g: Int, b: Int): Int =
+        ((r * 77 + g * 150 + b * 29) shr 8).coerceIn(0, 255)
 }
