@@ -71,10 +71,10 @@ enum ImageWarper {
             throw ImageWarperError.warpFailed(
                 "CIPerspectiveCorrection produced an invalid extent (\(extent))")
         }
-        // Optional post-warp enhancement. CIColorControls preserves the
+        // Optional post-warp enhancement. The filters used preserve the
         // extent, so we keep rendering from the geometry extent computed
         // above.
-        let enhanced = applyEnhancement(out, mode: enhancement)
+        let enhanced = applyEnhancement(out, mode: enhancement, extent: extent)
         guard let cg = ciContext.createCGImage(enhanced, from: extent) else {
             throw ImageWarperError.warpFailed("CGImage render failed (extent=\(extent))")
         }
@@ -86,20 +86,71 @@ enum ImageWarper {
         return try TempFiles.write(jpegData: data, quality: q)
     }
 
-    /// Apply an optional colour enhancement to the perspective-corrected
-    /// image. Values mirror the Android ColorMatrix settings so both
-    /// platforms produce a comparable look. `none` returns the image as-is.
-    private static func applyEnhancement(_ image: CIImage, mode: String) -> CIImage {
+    /// Apply an optional shadow-aware enhancement to the perspective-corrected
+    /// image. `none` returns the image as-is.
+    ///
+    /// `enhanced` and `blackAndWhite` lean on `CIDocumentEnhancer` (iOS 16+),
+    /// Apple's built-in document cleanup that removes shadows, whitens the
+    /// background, and boosts contrast. `blackAndWhite` then binarises with
+    /// `CIColorThresholdOtsu` (iOS 14+). On older OSes we fall back to a
+    /// manual illumination-division (`flatten`) using a large box blur and
+    /// `CIDivideBlendMode`, mirroring the Android pixel pipeline. `grayscale`
+    /// is a plain global desaturate.
+    private static func applyEnhancement(_ image: CIImage, mode: String,
+                                         extent: CGRect) -> CIImage {
         switch mode {
         case "grayscale":
-            return colorControls(image, saturation: 0, brightness: 0, contrast: 1.0)
+            return colorControls(image, saturation: 0, brightness: 0, contrast: 1.05)
         case "enhanced":
-            return colorControls(image, saturation: 1.1, brightness: 0.02, contrast: 1.2)
+            return documentEnhanced(image) ?? flatten(image, extent: extent)
         case "blackAndWhite":
-            return colorControls(image, saturation: 0, brightness: 0, contrast: 2.2)
+            let cleaned = documentEnhanced(image) ?? flatten(image, extent: extent)
+            return binarize(cleaned)
+                ?? colorControls(cleaned, saturation: 0, brightness: 0, contrast: 2.4)
         default:
             return image
         }
+    }
+
+    /// Apple's turnkey document enhancer (shadow removal + background
+    /// whitening + contrast). `amount` is on a 0–10 scale; 1.0 is a moderate,
+    /// safe default. Returns nil on iOS < 16 so the caller can fall back.
+    private static func documentEnhanced(_ image: CIImage) -> CIImage? {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            guard let f = CIFilter(name: "CIDocumentEnhancer") else { return nil }
+            f.setValue(image, forKey: kCIInputImageKey)
+            f.setValue(1.0, forKey: "inputAmount")
+            return f.outputImage
+        }
+        return nil
+    }
+
+    /// Automatic Otsu binarisation (iOS 14+). Returns nil on older OSes.
+    private static func binarize(_ image: CIImage) -> CIImage? {
+        if #available(iOS 14.0, macOS 11.0, *) {
+            guard let f = CIFilter(name: "CIColorThresholdOtsu") else { return nil }
+            f.setValue(image, forKey: kCIInputImageKey)
+            return f.outputImage
+        }
+        return nil
+    }
+
+    /// Manual illumination flattening for OSes without `CIDocumentEnhancer`:
+    /// estimate the lighting with a large box blur, then divide it out
+    /// (`source / illumination`) so uneven lighting and soft shadows cancel.
+    /// The input is clamped so the blur doesn't darken edges, and the divided
+    /// result is cropped back to the document extent.
+    private static func flatten(_ image: CIImage, extent: CGRect) -> CIImage {
+        let radius = max(8.0, Double(min(extent.width, extent.height)) * 0.08)
+        guard let blurF = CIFilter(name: "CIBoxBlur") else { return image }
+        blurF.setValue(image.clampedToExtent(), forKey: kCIInputImageKey)
+        blurF.setValue(radius, forKey: kCIInputRadiusKey)
+        guard let illumination = blurF.outputImage?.cropped(to: extent) else { return image }
+        guard let divide = CIFilter(name: "CIDivideBlendMode") else { return image }
+        divide.setValue(image, forKey: kCIInputImageKey)
+        divide.setValue(illumination, forKey: kCIInputBackgroundImageKey)
+        let divided = divide.outputImage ?? image
+        return colorControls(divided, saturation: 1.1, brightness: 0, contrast: 1.1)
     }
 
     private static func colorControls(_ image: CIImage,
