@@ -274,6 +274,7 @@ class DoclensController extends ChangeNotifier {
       rawImagePath: rawImagePath,
       quad: quad,
       jpegQuality: _config.jpegQuality,
+      enhancement: _config.imageEnhancement,
     );
   }
 

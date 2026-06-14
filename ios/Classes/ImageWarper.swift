@@ -20,7 +20,8 @@ enum ImageWarper {
     /// Apply a perspective correction to [cgImage] using corner points in
     /// the image's own pixel coordinates (origin top-left, y-down).
     /// CoreImage uses bottom-left origin, so we flip Y before calling.
-    static func warp(cgImage: CGImage, quad: Quad, jpegQuality: Int) throws -> String {
+    static func warp(cgImage: CGImage, quad: Quad, jpegQuality: Int,
+                     enhancement: String = "none") throws -> String {
         let ci = CIImage(cgImage: cgImage)
         let w = ci.extent.width
         let h = ci.extent.height
@@ -70,7 +71,11 @@ enum ImageWarper {
             throw ImageWarperError.warpFailed(
                 "CIPerspectiveCorrection produced an invalid extent (\(extent))")
         }
-        guard let cg = ciContext.createCGImage(out, from: extent) else {
+        // Optional post-warp enhancement. CIColorControls preserves the
+        // extent, so we keep rendering from the geometry extent computed
+        // above.
+        let enhanced = applyEnhancement(out, mode: enhancement)
+        guard let cg = ciContext.createCGImage(enhanced, from: extent) else {
             throw ImageWarperError.warpFailed("CGImage render failed (extent=\(extent))")
         }
         let img = UIImage(cgImage: cg)
@@ -79,6 +84,34 @@ enum ImageWarper {
             throw ImageWarperError.warpFailed("JPEG encode failed")
         }
         return try TempFiles.write(jpegData: data, quality: q)
+    }
+
+    /// Apply an optional colour enhancement to the perspective-corrected
+    /// image. Values mirror the Android ColorMatrix settings so both
+    /// platforms produce a comparable look. `none` returns the image as-is.
+    private static func applyEnhancement(_ image: CIImage, mode: String) -> CIImage {
+        switch mode {
+        case "grayscale":
+            return colorControls(image, saturation: 0, brightness: 0, contrast: 1.0)
+        case "enhanced":
+            return colorControls(image, saturation: 1.1, brightness: 0.02, contrast: 1.2)
+        case "blackAndWhite":
+            return colorControls(image, saturation: 0, brightness: 0, contrast: 2.2)
+        default:
+            return image
+        }
+    }
+
+    private static func colorControls(_ image: CIImage,
+                                      saturation: CGFloat,
+                                      brightness: CGFloat,
+                                      contrast: CGFloat) -> CIImage {
+        guard let f = CIFilter(name: "CIColorControls") else { return image }
+        f.setValue(image, forKey: kCIInputImageKey)
+        f.setValue(saturation, forKey: kCIInputSaturationKey)
+        f.setValue(brightness, forKey: kCIInputBrightnessKey)
+        f.setValue(contrast, forKey: kCIInputContrastKey)
+        return f.outputImage ?? image
     }
 
     /// Sanity-check the quad before handing it to CoreImage.
@@ -114,12 +147,14 @@ enum ImageWarper {
     }
 
     /// Read an image from disk, warp it, write a new file. Used by warpImage().
-    static func warpFile(inputPath: String, quad: Quad, jpegQuality: Int) throws -> String {
+    static func warpFile(inputPath: String, quad: Quad, jpegQuality: Int,
+                         enhancement: String = "none") throws -> String {
         guard let img = UIImage(contentsOfFile: inputPath),
               let cg = img.uprightCGImage() else {
             throw ImageWarperError.ioError("Cannot read image at \(inputPath)")
         }
-        return try warp(cgImage: cg, quad: quad, jpegQuality: jpegQuality)
+        return try warp(cgImage: cg, quad: quad, jpegQuality: jpegQuality,
+                        enhancement: enhancement)
     }
 }
 

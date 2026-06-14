@@ -1,3 +1,19 @@
+## 0.0.6
+
+**Optional image enhancement on the cropped output**
+
+- New `ScannerConfig.imageEnhancement` (and matching `DoclensScreen`
+  parameter) applies a post-warp filter to the cropped document:
+  `none` (default, unchanged behaviour), `grayscale`, `enhanced`
+  (boosted contrast/saturation), or `blackAndWhite` (high-contrast,
+  near-bitonal — best for OCR on faint text).
+- Applies to both the capture's cropped output and re-warps performed via
+  `EditCornersScreen` (it travels on the controller's config and the
+  `warpImage` channel call). The raw image is never modified.
+- Implemented natively in one pass: Android via a `ColorMatrix` colour
+  filter during the warp draw, iOS via `CIColorControls` on the
+  perspective-corrected image. Both platforms use matched settings.
+
 ## 0.0.5
 
 **Android: crop lands in the wrong position after editing corners**

@@ -53,12 +53,14 @@ class MethodChannelDoclens extends DoclensPlatform {
     required String rawImagePath,
     required Quad quad,
     int jpegQuality = 100,
+    ImageEnhancement enhancement = ImageEnhancement.none,
   }) async {
     try {
       final out = await _method.invokeMethod<String>('warpImage', {
         'rawImagePath': rawImagePath,
         'quad': quad.toMap(),
         'jpegQuality': jpegQuality,
+        'enhancement': enhancement.name,
       });
       if (out == null) {
         throw const ScannerCaptureException('Warp returned null path');

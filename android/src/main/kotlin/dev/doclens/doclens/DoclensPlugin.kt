@@ -123,13 +123,14 @@ class DoclensPlugin :
         val rawPath = call.argument<String>("rawImagePath")
         val quadMap = call.argument<Map<String, Any?>>("quad")
         val quality = call.argument<Int>("jpegQuality") ?: 100
+        val enhancement = call.argument<String>("enhancement") ?: "none"
         if (rawPath == null || quadMap == null) {
             result.error("capture_failed", "Invalid warp args", null); return
         }
         backgroundExecutor.execute {
             try {
                 val q = Quad.fromMap(quadMap)
-                val out = ImageWarper.warpFile(rawPath, q, quality)
+                val out = ImageWarper.warpFile(rawPath, q, quality, enhancement)
                 mainHandler.post { result.success(out) }
             } catch (e: Exception) {
                 mainHandler.post { result.error("capture_failed", e.message, null) }

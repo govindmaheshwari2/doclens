@@ -6,6 +6,7 @@ struct ScannerConfig {
     let detectionThrottleHz: Int
     let enablePerspectiveWarp: Bool
     let jpegQuality: Int
+    let imageEnhancement: String
     let outputFormat: String
     let captureResolution: String
     let initialFlashMode: String
@@ -20,6 +21,7 @@ struct ScannerConfig {
             detectionThrottleHz: map["detectionThrottleHz"] as? Int ?? 12,
             enablePerspectiveWarp: map["enablePerspectiveWarp"] as? Bool ?? true,
             jpegQuality: map["jpegQuality"] as? Int ?? 100,
+            imageEnhancement: map["imageEnhancement"] as? String ?? "none",
             outputFormat: map["outputFormat"] as? String ?? "jpeg",
             captureResolution: map["captureResolution"] as? String ?? "high",
             initialFlashMode: map["initialFlashMode"] as? String ?? "auto",

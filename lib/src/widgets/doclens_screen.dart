@@ -94,6 +94,7 @@ class DoclensScreen extends StatefulWidget {
     this.autoCaptureCornerThreshold,
     this.enablePerspectiveWarp,
     this.jpegQuality,
+    this.imageEnhancement,
     this.initialFlashMode,
     this.initialLens,
     this.enableTapToFocus,
@@ -183,6 +184,20 @@ class DoclensScreen extends StatefulWidget {
   /// disk size matters (visually indistinguishable from 100 and
   /// ~3× smaller).
   final int? jpegQuality;
+
+  /// Post-warp processing applied to the cropped document image.
+  ///
+  /// - [ImageEnhancement.none] (default) — pure dewarp, unmodified pixels.
+  /// - [ImageEnhancement.grayscale] — desaturated.
+  /// - [ImageEnhancement.enhanced] — boosted contrast/saturation
+  ///   ("magic colour").
+  /// - [ImageEnhancement.blackAndWhite] — high-contrast near-bitonal
+  ///   "document" look, best for OCR on faint text.
+  ///
+  /// Only the cropped output is affected; the raw image is left untouched.
+  /// When `null` (default), inherits from [config] /
+  /// [ScannerConfig.imageEnhancement].
+  final ImageEnhancement? imageEnhancement;
 
   /// Flash mode the camera should start in.
   ///
@@ -385,6 +400,7 @@ class DoclensScreen extends StatefulWidget {
     double? autoCaptureCornerThreshold,
     bool? enablePerspectiveWarp,
     int? jpegQuality,
+    ImageEnhancement? imageEnhancement,
     FlashMode? initialFlashMode,
     CameraLens? initialLens,
     bool? enableTapToFocus,
@@ -420,6 +436,7 @@ class DoclensScreen extends StatefulWidget {
           autoCaptureCornerThreshold: autoCaptureCornerThreshold,
           enablePerspectiveWarp: enablePerspectiveWarp,
           jpegQuality: jpegQuality,
+          imageEnhancement: imageEnhancement,
           initialFlashMode: initialFlashMode,
           initialLens: initialLens,
           enableTapToFocus: enableTapToFocus,
@@ -488,6 +505,7 @@ class _DoclensScreenState extends State<DoclensScreen> {
       enablePerspectiveWarp:
           widget.enablePerspectiveWarp ?? c.enablePerspectiveWarp,
       jpegQuality: widget.jpegQuality ?? c.jpegQuality,
+      imageEnhancement: widget.imageEnhancement ?? c.imageEnhancement,
       outputFormat: c.outputFormat,
       captureResolution: c.captureResolution,
       // camera

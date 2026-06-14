@@ -44,6 +44,33 @@ enum CameraLens { back, front }
 
 enum ImageFormat { jpeg, png }
 
+/// Optional post-warp image processing applied to the cropped document.
+///
+/// Enhancement runs on the perspective-corrected crop only — the raw image
+/// ([ScanResult.rawImagePath]) is always left untouched. It is applied both
+/// to the capture's cropped output and to re-warps performed via
+/// `EditCornersScreen`.
+enum ImageEnhancement {
+  /// No processing — the cropped output is the original pixels, just
+  /// dewarped. Most faithful; best when you run your own preprocessing or
+  /// want unmodified bytes for archival.
+  none,
+
+  /// Desaturate to grayscale. Neutral tone, smaller files, and a calmer
+  /// look for mixed photo/text pages.
+  grayscale,
+
+  /// Boost contrast and saturation for a punchy, readable colour scan
+  /// ("magic colour"). Good general-purpose choice for legible photos of
+  /// documents shot in uneven lighting.
+  enhanced,
+
+  /// Desaturate and push contrast hard for a high-contrast, near-bitonal
+  /// "document" look. Best for plain text pages and for OCR on faint or
+  /// low-contrast print.
+  blackAndWhite,
+}
+
 /// Capture resolution hint. The native side picks the closest supported preset.
 enum Resolution { auto, high, max }
 
@@ -116,6 +143,7 @@ class ScannerConfig {
     // Capture
     this.enablePerspectiveWarp = true,
     this.jpegQuality = 100,
+    this.imageEnhancement = ImageEnhancement.none,
     this.outputFormat = ImageFormat.jpeg,
     this.captureResolution = Resolution.high,
     // Camera
@@ -195,6 +223,12 @@ class ScannerConfig {
   /// and ~3× smaller).
   final int jpegQuality;
 
+  /// Post-warp processing applied to the cropped document image. Defaults
+  /// to [ImageEnhancement.none] (pure dewarp, unmodified pixels). Applies
+  /// to both the capture's cropped output and re-warps via
+  /// `EditCornersScreen`. The raw image is never enhanced.
+  final ImageEnhancement imageEnhancement;
+
   /// Output container format for captures. JPEG is the only fully
   /// supported value today; PNG is reserved for a future release.
   final ImageFormat outputFormat;
@@ -272,6 +306,7 @@ class ScannerConfig {
         'detectionThrottleHz': detectionThrottleHz,
         'enablePerspectiveWarp': enablePerspectiveWarp,
         'jpegQuality': jpegQuality,
+        'imageEnhancement': imageEnhancement.name,
         'outputFormat': outputFormat.name,
         'captureResolution': captureResolution.name,
         'initialFlashMode': initialFlashMode.name,
