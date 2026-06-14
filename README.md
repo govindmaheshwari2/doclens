@@ -182,8 +182,8 @@ lighting and divide it out. It runs entirely on-device with **no bundled
 model and no extra dependency**:
 
 - **iOS** uses Apple's built-in `CIDocumentEnhancer` (iOS 16+), falling back
-  to a manual box-blur + `CIDivideBlendMode` flatten on older OSes;
-  `blackAndWhite` then binarises with `CIColorThresholdOtsu`.
+  to `CIHighlightShadowAdjust` (local shadow lift) on older OSes;
+  `blackAndWhite` desaturates then binarises with `CIColorThresholdOtsu`.
 - **Android** estimates the background from a heavily downscaled copy and
   divides it out per pixel (adaptive-mean thresholding for `blackAndWhite`).
 
