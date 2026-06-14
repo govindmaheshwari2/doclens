@@ -187,6 +187,30 @@ EditCornersScreen(
 Every handle, line, and button on `EditCornersScreen` is overridable via
 builders.
 
+## Image enhancement
+
+By default the cropped output is a pure dewarp — the original pixels,
+straightened, with nothing else touched. Set `imageEnhancement` to apply a
+post-warp filter to the **cropped** image (the raw image is never modified):
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  imageEnhancement: ImageEnhancement.blackAndWhite, // best for OCR
+);
+```
+
+| Mode | Effect | Good for |
+| --- | --- | --- |
+| `none` (default) | Pure dewarp, unmodified pixels | Archival, your own preprocessing |
+| `grayscale` | Desaturated | Neutral look, smaller files |
+| `enhanced` | Boosted contrast + saturation ("magic colour") | Photos in uneven light |
+| `blackAndWhite` | Desaturated + hard contrast, near-bitonal | Plain text, OCR on faint print |
+
+Enhancement applies to both the capture's cropped output and any re-warp
+done through `EditCornersScreen` (it travels on the controller's config).
+It's a knob on `ScannerConfig` too, so it works from every entry point.
+
 ## Platform setup
 
 ### iOS

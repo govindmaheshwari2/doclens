@@ -302,7 +302,7 @@ class ScannerSession(
                     }
                     var croppedPath: String? = null
                     if (config.enablePerspectiveWarp && pixelQuad != null) {
-                        croppedPath = ImageWarper.warp(rotated, pixelQuad, config.jpegQuality)
+                        croppedPath = ImageWarper.warp(rotated, pixelQuad, config.jpegQuality, config.imageEnhancement)
                     }
                     // Always persist the upright bitmap we actually measured
                     // (`rotated`) so the returned rawImagePath's pixel

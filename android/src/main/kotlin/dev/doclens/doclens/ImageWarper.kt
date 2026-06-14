@@ -3,6 +3,8 @@ package dev.doclens.doclens
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
@@ -18,7 +20,7 @@ import kotlin.math.roundToInt
  * lengths to preserve resolution without excessive memory use.
  */
 object ImageWarper {
-    fun warp(bitmap: Bitmap, quad: Quad, jpegQuality: Int): String {
+    fun warp(bitmap: Bitmap, quad: Quad, jpegQuality: Int, enhancement: String = "none"): String {
         val widthTop = hypot((quad.topRight.x - quad.topLeft.x).toDouble(),
                              (quad.topRight.y - quad.topLeft.y).toDouble())
         val widthBottom = hypot((quad.bottomRight.x - quad.bottomLeft.x).toDouble(),
@@ -50,6 +52,11 @@ object ImageWarper {
         val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        // Apply optional enhancement in the same pass as the warp by tinting
+        // the source through a ColorMatrix — no extra full-frame allocation.
+        colorMatrixFor(enhancement)?.let {
+            paint.colorFilter = ColorMatrixColorFilter(it)
+        }
         canvas.drawBitmap(bitmap, matrix, paint)
 
         val tmp = File.createTempFile("fnds_cropped_", ".jpg")
@@ -60,10 +67,39 @@ object ImageWarper {
         return tmp.absolutePath
     }
 
-    fun warpFile(rawPath: String, quad: Quad, jpegQuality: Int): String {
+    fun warpFile(rawPath: String, quad: Quad, jpegQuality: Int, enhancement: String = "none"): String {
         val raw = BitmapFactory.decodeFile(rawPath)
             ?: throw ScannerException.CaptureFailed("Decode failed: $rawPath")
         val rotated = ExifRotator.rotated(raw, rawPath)
-        return warp(rotated, quad, jpegQuality)
+        return warp(rotated, quad, jpegQuality, enhancement)
+    }
+
+    /**
+     * Builds the ColorMatrix for a given enhancement mode, or null for
+     * `none` (no colour processing). Values mirror the iOS CIColorControls
+     * settings so both platforms produce a comparable look.
+     */
+    private fun colorMatrixFor(enhancement: String): ColorMatrix? = when (enhancement) {
+        "grayscale" -> ColorMatrix().apply { setSaturation(0f) }
+        "enhanced" -> contrastMatrix(1.2f).apply { postConcat(ColorMatrix().apply { setSaturation(1.1f) }) }
+        "blackAndWhite" -> ColorMatrix().apply {
+            setSaturation(0f)
+            postConcat(contrastMatrix(2.2f))
+        }
+        else -> null
+    }
+
+    /**
+     * A contrast-only matrix around the 8-bit mid-grey point: each channel is
+     * scaled by [c] and offset so 128 stays fixed. `c > 1` increases contrast.
+     */
+    private fun contrastMatrix(c: Float): ColorMatrix {
+        val t = (1f - c) * 128f
+        return ColorMatrix(floatArrayOf(
+            c, 0f, 0f, 0f, t,
+            0f, c, 0f, 0f, t,
+            0f, 0f, c, 0f, t,
+            0f, 0f, 0f, 1f, 0f,
+        ))
     }
 }
