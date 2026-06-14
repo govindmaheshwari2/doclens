@@ -1,4 +1,4 @@
-## 0.0.6
+## 0.0.5
 
 **Optional image enhancement on the cropped output**
 
@@ -13,8 +13,6 @@
 - Implemented natively in one pass: Android via a `ColorMatrix` colour
   filter during the warp draw, iOS via `CIColorControls` on the
   perspective-corrected image. Both platforms use matched settings.
-
-## 0.0.5
 
 **Android: crop lands in the wrong position after editing corners**
 
