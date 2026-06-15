@@ -116,20 +116,25 @@ class ShowroomHome extends StatelessWidget {
         title: 'Drop-in scanner',
         subtitle:
             'One call returns a polished scanner: live preview, auto-capture '
-            'with confirmation, built-in review screen.',
+            'with confirmation, built-in review screen. Pick an enhancement '
+            'mode first.',
         tags: const [
           'DoclensScreen.scan()',
           'auto-capture',
-          'edit corners',
+          'enhancement',
         ],
         accent: _kRust,
         preview: const _DropInPreview(),
         onTap: (ctx) async {
-          final result = await DoclensScreen.scan(ctx);
+          final mode = await _pickEnhancement(ctx);
+          if (mode == null || !ctx.mounted) return;
+          final result =
+              await DoclensScreen.scan(ctx, imageEnhancement: mode);
           if (result == null || !ctx.mounted) return;
           await Navigator.of(ctx).push<void>(
             MaterialPageRoute(
-              builder: (_) => _ReturnedResult(result: result),
+              builder: (_) =>
+                  _ReturnedResult(result: result, enhancement: mode),
             ),
           );
         },
@@ -954,12 +959,128 @@ class _FooterLink extends StatelessWidget {
 }
 
 // =====================================================================
+//  Enhancement-mode picker (drop-in entry)
+// =====================================================================
+
+/// One row of metadata per [ImageEnhancement] value, in display order.
+const _kEnhancementOptions = <(ImageEnhancement, String, String)>[
+  (ImageEnhancement.none, 'None', 'Pure dewarp — original pixels, untouched'),
+  (ImageEnhancement.grayscale, 'Grayscale', 'Plain desaturate'),
+  (
+    ImageEnhancement.enhanced,
+    'Enhanced',
+    'Shadow removal + whitened background, colour kept ("magic colour")'
+  ),
+  (
+    ImageEnhancement.blackAndWhite,
+    'Black & white',
+    'Shadow removal + bitonal — best for OCR on faint text'
+  ),
+];
+
+/// Presents the enhancement options and resolves with the chosen mode, or
+/// `null` if the sheet is dismissed.
+Future<ImageEnhancement?> _pickEnhancement(BuildContext context) {
+  return showModalBottomSheet<ImageEnhancement>(
+    context: context,
+    backgroundColor: _kPaper,
+    showDragHandle: false,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (sheetCtx) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'IMAGE ENHANCEMENT',
+                style: _mono(
+                  size: 10,
+                  color: _kRust,
+                  weight: FontWeight.w700,
+                  letterSpacing: 0.26,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Applied to the cropped scan',
+                style: _serifS(size: 22, italic: true),
+              ),
+              const SizedBox(height: 16),
+              for (final (mode, label, blurb) in _kEnhancementOptions) ...[
+                _EnhancementOptionTile(
+                  label: label,
+                  blurb: blurb,
+                  onTap: () => Navigator.of(sheetCtx).pop(mode),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _EnhancementOptionTile extends StatelessWidget {
+  const _EnhancementOptionTile({
+    required this.label,
+    required this.blurb,
+    required this.onTap,
+  });
+  final String label;
+  final String blurb;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _kPaperHi,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _kRule),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: _serifS(size: 17, italic: false, height: 1.1),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(blurb, style: _mono(size: 10.5, height: 1.4)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Icon(Icons.arrow_forward, size: 14, color: _kRust),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// =====================================================================
 //  Returned-result preview (drop-in entry)
 // =====================================================================
 
 class _ReturnedResult extends StatelessWidget {
-  const _ReturnedResult({required this.result});
+  const _ReturnedResult({required this.result, this.enhancement});
   final ScanResult result;
+  final ImageEnhancement? enhancement;
 
   @override
   Widget build(BuildContext context) {
@@ -1044,6 +1165,8 @@ class _ReturnedResult extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (enhancement != null)
+                      _kv('imageEnhancement', enhancement!.name),
                     _kv('rawImagePath', result.rawImagePath),
                     _kv('croppedImagePath',
                         result.croppedImagePath ?? '— (none)'),
