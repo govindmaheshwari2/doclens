@@ -54,6 +54,7 @@ class MethodChannelDoclens extends DoclensPlatform {
     required Quad quad,
     int jpegQuality = 100,
     ImageEnhancement enhancement = ImageEnhancement.none,
+    AutoOrientation autoOrientation = AutoOrientation.none,
   }) async {
     try {
       final out = await _method.invokeMethod<String>('warpImage', {
@@ -61,9 +62,29 @@ class MethodChannelDoclens extends DoclensPlatform {
         'quad': quad.toMap(),
         'jpegQuality': jpegQuality,
         'enhancement': enhancement.name,
+        'autoOrientation': autoOrientation.name,
       });
       if (out == null) {
         throw const ScannerCaptureException('Warp returned null path');
+      }
+      return out;
+    } on PlatformException catch (e) {
+      throw _translate(e);
+    }
+  }
+
+  @override
+  Future<String> rotateImage({
+    required String imagePath,
+    required int quarterTurns,
+  }) async {
+    try {
+      final out = await _method.invokeMethod<String>('rotateImage', {
+        'imagePath': imagePath,
+        'quarterTurns': quarterTurns,
+      });
+      if (out == null) {
+        throw const ScannerCaptureException('Rotate returned null path');
       }
       return out;
     } on PlatformException catch (e) {

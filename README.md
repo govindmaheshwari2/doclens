@@ -68,15 +68,15 @@ Each builder slot takes three things: `null` to draw nothing, a static default f
 
 That's the most common ask, so the package ships a set of ready-made overlays as named constructors on `QuadOverlay`:
 
-| Variant | Look |
-|---|---|
-| `QuadOverlay.outline` | A stroked polygon, nothing else |
-| `QuadOverlay.filled` | Stroked polygon with a tinted fill (this is the default) |
-| `QuadOverlay.corners` | Four corner brackets, no connecting lines |
-| `QuadOverlay.cornersFilled` | Corner brackets plus a tinted fill |
-| `QuadOverlay.dots` | A filled dot at each corner |
-| `QuadOverlay.dotsLine` | Corner dots joined by a hairline |
-| `QuadOverlay.glow` | A blurred halo behind a stroked polygon |
+| Variant                     | Look                                                     |
+| --------------------------- | -------------------------------------------------------- |
+| `QuadOverlay.outline`       | A stroked polygon, nothing else                          |
+| `QuadOverlay.filled`        | Stroked polygon with a tinted fill (this is the default) |
+| `QuadOverlay.corners`       | Four corner brackets, no connecting lines                |
+| `QuadOverlay.cornersFilled` | Corner brackets plus a tinted fill                       |
+| `QuadOverlay.dots`          | A filled dot at each corner                              |
+| `QuadOverlay.dotsLine`      | Corner dots joined by a hairline                         |
+| `QuadOverlay.glow`          | A blurred halo behind a stroked polygon                  |
 
 Drop one straight into an `overlayBuilder`:
 
@@ -168,12 +168,12 @@ final result = await DoclensScreen.scan(
 );
 ```
 
-| Mode | Effect | Good for |
-| --- | --- | --- |
-| `none` (default) | Pure dewarp, unmodified pixels | Archival, your own preprocessing |
-| `grayscale` | Plain desaturate (no shadow handling) | Neutral look, smaller files |
-| `enhanced` | **Shadow removal** + background whitening, colour kept ("magic colour") | Photos in uneven light |
-| `blackAndWhite` | **Shadow removal** + adaptive/Otsu threshold, near-bitonal | Plain text, OCR on faint print |
+| Mode             | Effect                                                                  | Good for                         |
+| ---------------- | ----------------------------------------------------------------------- | -------------------------------- |
+| `none` (default) | Pure dewarp, unmodified pixels                                          | Archival, your own preprocessing |
+| `grayscale`      | Plain desaturate (no shadow handling)                                   | Neutral look, smaller files      |
+| `enhanced`       | **Shadow removal** + background whitening, colour kept ("magic colour") | Photos in uneven light           |
+| `blackAndWhite`  | **Shadow removal** + adaptive/Otsu threshold, near-bitonal              | Plain text, OCR on faint print   |
 
 `enhanced` and `blackAndWhite` genuinely remove uneven lighting and soft
 shadows — not just global contrast. The technique is the classic
@@ -208,12 +208,12 @@ final result = await DoclensScreen.scan(
 );
 ```
 
-| Mode | Effect | Good for |
-| --- | --- | --- |
-| `none` (default) | Pure dewarp, unmodified pixels | Archival, your own preprocessing |
-| `grayscale` | Plain desaturate (no shadow handling) | Neutral look, smaller files |
-| `enhanced` | **Shadow removal** + background whitening, colour kept ("magic colour") | Photos in uneven light |
-| `blackAndWhite` | **Shadow removal** + adaptive/Otsu threshold, near-bitonal | Plain text, OCR on faint print |
+| Mode             | Effect                                                                  | Good for                         |
+| ---------------- | ----------------------------------------------------------------------- | -------------------------------- |
+| `none` (default) | Pure dewarp, unmodified pixels                                          | Archival, your own preprocessing |
+| `grayscale`      | Plain desaturate (no shadow handling)                                   | Neutral look, smaller files      |
+| `enhanced`       | **Shadow removal** + background whitening, colour kept ("magic colour") | Photos in uneven light           |
+| `blackAndWhite`  | **Shadow removal** + adaptive/Otsu threshold, near-bitonal              | Plain text, OCR on faint print   |
 
 `enhanced` and `blackAndWhite` genuinely remove uneven lighting and soft
 shadows — not just global contrast. The technique is the classic
@@ -234,6 +234,43 @@ It's a knob on `ScannerConfig` too, so it works from every entry point.
 > For the absolute best shadow/glare removal, the OS-native scanners
 > (`scanWithNativeUI`) apply Apple's / Google's own document cleanup — at the
 > cost of using their full-screen UI instead of this package's custom flow.
+
+## Auto-orientation & rotate
+
+A capture only knows a document's _in-frame_ orientation — shoot a page
+sideways or upside-down and the dewarped crop comes out the same way. Set
+`autoOrientation` to detect the page's text direction on-device and rotate the
+crop in 90° steps so it reads upright:
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  autoOrientation: AutoOrientation.auto,
+);
+```
+
+| Mode             | Effect                                                         |
+| ---------------- | -------------------------------------------------------------- |
+| `none` (default) | Keep the crop's in-frame orientation                           |
+| `auto`           | Detect the dominant text direction and rotate the crop upright |
+
+Detection reuses the OS text APIs already on each platform — Apple Vision's
+`VNRecognizeTextRequest` on iOS and Play-services ML Kit text recognition on
+Android — so **no model is bundled** (the Android model is delivered on demand
+by Google Play services, exactly like `scanWithNativeUI`). The crop is read at
+each of the four 90° rotations and turned to whichever reads as the most
+confident text; a blank or purely graphical page (no confident text) is left
+untouched. Like enhancement, it runs on the cropped output only — the raw image
+is never rotated — and travels on `ScannerConfig`, so it applies to captures
+and to re-warps via `EditCornersScreen`.
+
+For a **manual** rotate control (e.g. a button in your review UI), call the
+controller directly — `quarterTurns` is clockwise and normalized modulo 4, so
+`-1` and `3` both turn one step the respective way:
+
+```dart
+final rotatedPath = await controller.rotateImage(scan.croppedImagePath!, 1);
+```
 
 ## Platform setup
 
@@ -258,18 +295,42 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
 
 ## API reference
 
-- **`DoclensScreen`** — the drop-in route. `DoclensScreen.scan(ctx)` pushes a full-screen route, waits for a `ScanResult?`, and pops itself on accept or cancel.
-- **`DoclensController`** — owns a camera session. Streams: `quadStream`, `statusStream`, `autoCaptureStream`, `lowLightStream`, `previewSizeStream`. Methods: `initialize()`, `capture()`, `warpImage()`, `focusAt()`, `setFlashMode()`, `cycleFlashMode()`, `switchCamera()`, `pause()`, `resume()`, `dispose()`.
-- **`DoclensView`** — the widget that renders the preview plus your overlays. Builder slots: `overlayBuilder`, `captureButtonBuilder`, `flashButtonBuilder`, `lowLightHintBuilder`, `debugOverlayBuilder`. Handles tap-to-focus when enabled.
-- **`EditCornersScreen`** — the drag-the-corners helper, re-warps on save.
-- **`QuadOverlay`** + **`QuadOverlayStyle`** — the pre-built overlays (`outline`, `filled`, `corners`, `cornersFilled`, `dots`, `dotsLine`, `glow`) with status-driven color. Pass the enum through `DoclensScreen.overlayStyle`, or use a constructor directly in an `overlayBuilder`.
-- **`scanWithNativeUI()`** on `DoclensPlatform.instance` — the full native-modal scan, returns `List<String>?`.
-- **`ScannerConfig`** — every feature flag with a sane default: auto-capture timing, smoothing window, detection throttle, JPEG quality, flash, lens, lifecycle, telemetry, tap-to-focus, pinch-to-zoom.
-- **`Quad`** — a 4-point TL/TR/BR/BL shape with `area`, `centroid`, `contains`, `interpolate`, `maxCornerDistance`, `scaleToSize`.
-- **`ScanResult`** — `croppedImagePath`, `rawImagePath`, `detectedQuad`, `rawImageSize`, `warpError`.
-- **`StabilityTracker`** + **`QuadSmoother`** — pure-Dart helpers, exposed so you can use them in tests or your own pipeline.
-- **`DetectionStatus`** — `searching`, `tooFar`, `tooClose`, `tilted`, `aligned`, `confirming`, `noPaper`.
-- **Exceptions** — `ScannerPermissionException`, `ScannerUnavailableException`, `ScannerInitializationException`, `ScannerCaptureException`.
+- **`DoclensScreen`** — drop-in scanner route. `DoclensScreen.scan(ctx)`
+  pushes a full-screen route, awaits a `ScanResult?`, and pops itself
+  when the user accepts or cancels.
+- **`DoclensController`** — owns a session. Streams: `quadStream`,
+  `statusStream`, `autoCaptureStream`, `lowLightStream`,
+  `previewSizeStream`. Methods: `initialize()`, `capture()`,
+  `warpImage()`, `rotateImage()`, `focusAt()`, `setFlashMode()`,
+  `cycleFlashMode()`, `switchCamera()`, `pause()`, `resume()`, `dispose()`.
+- **`DoclensView`** — Flutter widget rendering preview + your overlays.
+  Builder slots: `overlayBuilder`, `captureButtonBuilder`,
+  `flashButtonBuilder`, `lowLightHintBuilder`, `debugOverlayBuilder`.
+  Handles tap-to-focus when `ScannerConfig.enableTapToFocus` is true.
+- **`EditCornersScreen`** — drag-the-corners helper with re-warp on
+  save.
+- **`QuadOverlay`** + **`QuadOverlayStyle`** — family of pre-built
+  overlay widgets (`outline`, `filled`, `corners`, `cornersFilled`,
+  `dots`, `dotsLine`, `glow`) with status-driven colour. Pass the enum
+  via `DoclensScreen.overlayStyle` or use a constructor directly inside
+  an `overlayBuilder`.
+- **`scanWithNativeUI()`** on `DoclensPlatform.instance` — full
+  native-modal scan, returns `List<String>?`.
+- **`ScannerConfig`** — every feature flag with a sensible default
+  (auto-capture timing, smoothing window, detection throttle, JPEG
+  quality, image enhancement, auto-orientation, flash, lens, lifecycle,
+  telemetry, tap-to-focus, pinch-to-zoom).
+- **`Quad`** — 4-point TL/TR/BR/BL with `area`, `centroid`, `contains`,
+  `interpolate`, `maxCornerDistance`, `scaleToSize`.
+- **`ScanResult`** — `croppedImagePath`, `rawImagePath`, `detectedQuad`,
+  `rawImageSize`, `warpError`.
+- **`StabilityTracker`** + **`QuadSmoother`** — pure Dart helpers,
+  exposed for tests or custom pipelines.
+- **`DetectionStatus`** — `searching`, `tooFar`, `tooClose`, `tilted`,
+  `aligned`, `confirming`, `noPaper`.
+- **Exceptions** — `ScannerPermissionException`,
+  `ScannerUnavailableException`, `ScannerInitializationException`,
+  `ScannerCaptureException`.
 
 ## What this package leaves to you
 

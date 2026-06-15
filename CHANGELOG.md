@@ -1,3 +1,23 @@
+## 0.0.6
+
+**Auto-orientation (upright) for the cropped output, plus a manual rotate API**
+
+- New `ScannerConfig.autoOrientation` (and matching `DoclensScreen` parameter):
+  `none` (default, unchanged behaviour) or `auto`, which detects the captured
+  page's dominant text direction on-device and rotates the crop in 90° steps so
+  it reads upright. A blank or purely graphical page (no confident text) is left
+  untouched.
+  - iOS: Apple Vision's `VNRecognizeTextRequest` (no bundled model).
+  - Android: Play-services ML Kit Latin text recognition, delivered on demand —
+    exactly like `scanWithNativeUI`'s document scanner; no model bundled in the
+    host APK.
+- Applies to both the capture's cropped output and re-warps via
+  `EditCornersScreen` (it travels on `ScannerConfig` and the `warpImage`
+  channel call). The raw image is never rotated.
+- New `DoclensController.rotateImage(path, quarterTurns)` (and `rotateImage`
+  channel method) for a manual rotate control — `quarterTurns` is clockwise and
+  normalized modulo 4. Writes a new file; the source is left untouched.
+
 ## 0.0.5
 
 **Image enhancement & shadow removal on the cropped output**

@@ -72,6 +72,12 @@ dependencies {
     // Dependency reference: https://developers.google.com/ml-kit/vision/doc-scanner/android
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
 
+    // ML Kit Latin text recognition (Play Services-delivered, downloaded on
+    // demand) — used only by `AutoOrientation.auto` to find a captured page's
+    // upright direction. No model is bundled in the host APK.
+    // Reference: https://developers.google.com/ml-kit/vision/text-recognition/v2/android
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")

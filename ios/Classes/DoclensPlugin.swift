@@ -52,6 +52,8 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
             }
         case "warpImage":
             handleWarp(call: call, result: result)
+        case "rotateImage":
+            handleRotate(call: call, result: result)
         case "setFlashMode":
             if let mode = (call.arguments as? [String: Any])?["mode"] as? String {
                 session?.setFlashMode(mode)
@@ -118,12 +120,37 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
         }
         let jpegQuality = (args["jpegQuality"] as? Int) ?? 100
         let enhancement = (args["enhancement"] as? String) ?? "none"
+        let autoOrientation = (args["autoOrientation"] as? String) ?? "none"
         let quad = Quad.fromMap(quadMap)
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let out = try ImageWarper.warpFile(
                     inputPath: path, quad: quad, jpegQuality: jpegQuality,
-                    enhancement: enhancement)
+                    enhancement: enhancement, autoOrientation: autoOrientation)
+                DispatchQueue.main.async { result(out) }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "capture_failed",
+                                        message: error.localizedDescription,
+                                        details: nil))
+                }
+            }
+        }
+    }
+
+    private func handleRotate(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let path = args["imagePath"] as? String else {
+            result(FlutterError(code: "capture_failed",
+                                message: "Invalid rotate args", details: nil))
+            return
+        }
+        let quarterTurns = (args["quarterTurns"] as? Int) ?? 0
+        let jpegQuality = (args["jpegQuality"] as? Int) ?? 100
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let out = try ImageWarper.rotateFile(
+                    inputPath: path, quarterTurns: quarterTurns, jpegQuality: jpegQuality)
                 DispatchQueue.main.async { result(out) }
             } catch {
                 DispatchQueue.main.async {
