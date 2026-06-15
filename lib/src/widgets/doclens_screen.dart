@@ -62,6 +62,26 @@ TextStyle _serif({
       height: height,
     );
 
+/// Best-effort delete of a scratch image the screen produced. Swallows
+/// every error (missing file, races) — temp cleanup must never throw into
+/// the UI.
+Future<void> _deleteFileQuietly(String? path) async {
+  if (path == null || path.isEmpty) return;
+  try {
+    await File(path).delete();
+  } catch (_) {}
+}
+
+/// Delete both images backing a discarded [page] (a rejected capture or a
+/// page removed from a multi-page batch). The raw and crop are distinct
+/// files written per capture, so neither is shared with a retained page.
+void _discardPageFiles(ScanResult page) {
+  _deleteFileQuietly(page.croppedImagePath);
+  if (page.rawImagePath != page.croppedImagePath) {
+    _deleteFileQuietly(page.rawImagePath);
+  }
+}
+
 /// Drop-in document scanner screen. Owns its own controller, runs the live
 /// preview, auto-captures, then presents a built-in review screen with
 /// retake / edit-corners / accept buttons.
@@ -114,6 +134,16 @@ class DoclensScreen extends StatefulWidget {
     this.showHint = true,
     this.showCloseButton = true,
     this.enableEditCorners = true,
+    // --- multi-page / batch ---
+    this.multiPage = false,
+    this.maxPages,
+    this.addPageLabel = 'Add',
+    this.doneLabel = 'Done',
+    this.discardPagesTitle = 'Discard scan?',
+    this.discardPagesMessage =
+        'You have unsaved pages. Discard them and close the scanner?',
+    this.onPagesChanged,
+    this.onComplete,
     // --- review-screen builders ---
     this.reviewBuilder,
     this.reviewHeaderBuilder,
@@ -326,6 +356,54 @@ class DoclensScreen extends StatefulWidget {
   /// Default `true`.
   final bool enableEditCorners;
 
+  /// When `true`, the scanner stays open after each accepted page and
+  /// accumulates them into a batch instead of popping on the first
+  /// capture. Prefer the dedicated [DoclensMultiScreen] (or
+  /// [DoclensMultiScreen.scan]) to launch this mode and receive the
+  /// collected `List<ScanResult>`.
+  ///
+  /// In this mode the live preview grows a thumbnail rail of captured
+  /// pages and a "[doneLabel]" button; the review screen's accept button
+  /// reads "[addPageLabel]". Default `false`.
+  final bool multiPage;
+
+  /// Optional cap on how many pages a [multiPage] session may collect.
+  /// When the batch reaches this count the shutter is disabled until a
+  /// page is removed. `null` (default) means unlimited.
+  final int? maxPages;
+
+  /// Label of the review screen's accept button while in [multiPage]
+  /// mode. Default `'Add'`.
+  final String addPageLabel;
+
+  /// Label of the "finish batch" button shown on the live preview in
+  /// [multiPage] mode. Default `'Done'`.
+  final String doneLabel;
+
+  /// Title of the confirmation dialog shown when the user tries to close
+  /// a [multiPage] session that still has uncommitted pages.
+  final String discardPagesTitle;
+
+  /// Body of the discard-confirmation dialog. See [discardPagesTitle].
+  final String discardPagesMessage;
+
+  /// Called whenever the [multiPage] batch changes (a page is added,
+  /// removed, or reordered), with an unmodifiable view of the current
+  /// pages. Useful for syncing an external page count or thumbnail UI.
+  final void Function(List<ScanResult> pages)? onPagesChanged;
+
+  /// Called when the user finishes a [multiPage] session (taps "Done"),
+  /// with the collected pages in order. The multi-page analogue of
+  /// [onCapture].
+  ///
+  /// - When `null` (default), the screen pops itself and the awaited
+  ///   `Future<List<ScanResult>?>` from [DoclensMultiScreen.scan] resolves
+  ///   with the pages — use this when you push the scanner as a route.
+  /// - When non-`null`, the screen calls your callback and does **not**
+  ///   auto-pop — use this when you mount the scanner directly as a widget
+  ///   (e.g. via [DoclensMultiScreen]) and drive navigation yourself.
+  final void Function(List<ScanResult> pages)? onComplete;
+
   /// Full [ScannerConfig] for fields not surfaced as top-level
   /// parameters: quad smoothing window, lifecycle pause/resume, debug
   /// overlay, telemetry logging, and the explicit
@@ -484,6 +562,251 @@ class DoclensScreen extends StatefulWidget {
   State<DoclensScreen> createState() => _DoclensScreenState();
 }
 
+/// Drop-in **multi-page** scanner — the batch sibling of [DoclensScreen].
+///
+/// Keeps the camera open across captures, collects pages with a thumbnail
+/// rail (reorder / delete from a built-in manager), and hands back the
+/// whole `List<ScanResult>`.
+///
+/// Two ways to use it, exactly mirroring [DoclensScreen]:
+///
+/// 1. **One line, as a route** — await the batch:
+/// ```dart
+/// final pages = await DoclensMultiScreen.scan(context);
+/// if (pages == null) return;          // user cancelled
+/// ```
+/// 2. **As a widget** — mount it directly and handle the result in
+///    [onComplete] (the batch analogue of [DoclensScreen.onCapture]):
+/// ```dart
+/// DoclensMultiScreen(
+///   onComplete: (pages) {
+///     // pages: List<ScanResult>, in order
+///   },
+/// )
+/// ```
+///
+/// Every knob from [DoclensScreen] (enhancement, auto-orientation, flash,
+/// overlay style, review builders via [config], …) carries over.
+class DoclensMultiScreen extends StatelessWidget {
+  const DoclensMultiScreen({
+    super.key,
+    this.onComplete,
+    this.maxPages,
+    this.onPagesChanged,
+    // behaviour
+    this.enableAutoCapture,
+    this.autoCaptureStabilityDuration,
+    this.autoCaptureConfirmationDelay,
+    this.autoCaptureCornerThreshold,
+    this.enablePerspectiveWarp,
+    this.jpegQuality,
+    this.imageEnhancement,
+    this.autoOrientation,
+    this.initialFlashMode,
+    this.initialLens,
+    this.enableTapToFocus,
+    this.enablePinchToZoom,
+    this.detectionThrottleHz,
+    // UI
+    this.accentColor,
+    this.warningColor,
+    this.overlayStyle,
+    this.backgroundColor = Colors.black,
+    this.appBarTitle = 'Preview',
+    this.captureHintText = 'Hold steady to capture',
+    this.retakeLabel = 'Retake',
+    this.editCornersLabel = 'Edit corners',
+    this.addPageLabel = 'Add',
+    this.doneLabel = 'Done',
+    this.discardPagesTitle = 'Discard scan?',
+    this.discardPagesMessage =
+        'You have unsaved pages. Discard them and close the scanner?',
+    this.showHint = true,
+    this.showCloseButton = true,
+    this.enableEditCorners = true,
+    this.errorBuilder,
+    this.config = const ScannerConfig(),
+  });
+
+  /// Called with the collected pages when the user taps "Done". When
+  /// non-`null` the screen does **not** pop itself — drive navigation
+  /// yourself. When `null`, mount this via [scan] (or push it as a route)
+  /// to receive the pages from the popped route instead.
+  final void Function(List<ScanResult> pages)? onComplete;
+
+  /// Cap on how many pages the batch may hold. `null` means unlimited.
+  final int? maxPages;
+
+  /// Called whenever the batch changes (add / remove / reorder).
+  final void Function(List<ScanResult> pages)? onPagesChanged;
+
+  final bool? enableAutoCapture;
+  final Duration? autoCaptureStabilityDuration;
+  final Duration? autoCaptureConfirmationDelay;
+  final double? autoCaptureCornerThreshold;
+  final bool? enablePerspectiveWarp;
+  final int? jpegQuality;
+  final ImageEnhancement? imageEnhancement;
+  final AutoOrientation? autoOrientation;
+  final FlashMode? initialFlashMode;
+  final CameraLens? initialLens;
+  final bool? enableTapToFocus;
+  final bool? enablePinchToZoom;
+  final int? detectionThrottleHz;
+  final Color? accentColor;
+  final Color? warningColor;
+  final QuadOverlayStyle? overlayStyle;
+  final Color backgroundColor;
+  final String appBarTitle;
+  final String captureHintText;
+  final String retakeLabel;
+  final String editCornersLabel;
+
+  /// Label of the review screen's accept button. Default `'Add'`.
+  final String addPageLabel;
+
+  /// Label of the "finish batch" button on the live preview. Default
+  /// `'Done'`.
+  final String doneLabel;
+
+  final String discardPagesTitle;
+  final String discardPagesMessage;
+  final bool showHint;
+  final bool showCloseButton;
+  final bool enableEditCorners;
+  final Widget Function(BuildContext context, String message)? errorBuilder;
+  final ScannerConfig config;
+
+  /// Push the multi-page scanner as a full-screen route and await the
+  /// captured pages — or `null` if the user cancels (back gesture / close
+  /// button) without keeping any.
+  ///
+  /// The batch sibling of [DoclensScreen.scan].
+  ///
+  /// ```dart
+  /// final pages = await DoclensMultiScreen.scan(context);
+  /// if (pages == null) return;          // cancelled
+  /// for (final page in pages) print(page.croppedImagePath);
+  /// ```
+  static Future<List<ScanResult>?> scan(
+    BuildContext context, {
+    int? maxPages,
+    bool? enableAutoCapture,
+    Duration? autoCaptureStabilityDuration,
+    Duration? autoCaptureConfirmationDelay,
+    double? autoCaptureCornerThreshold,
+    bool? enablePerspectiveWarp,
+    int? jpegQuality,
+    ImageEnhancement? imageEnhancement,
+    AutoOrientation? autoOrientation,
+    FlashMode? initialFlashMode,
+    CameraLens? initialLens,
+    bool? enableTapToFocus,
+    bool? enablePinchToZoom,
+    int? detectionThrottleHz,
+    Color? accentColor,
+    Color? warningColor,
+    QuadOverlayStyle? overlayStyle,
+    Color backgroundColor = Colors.black,
+    String appBarTitle = 'Preview',
+    String captureHintText = 'Hold steady to capture',
+    String retakeLabel = 'Retake',
+    String editCornersLabel = 'Edit corners',
+    String addPageLabel = 'Add',
+    String doneLabel = 'Done',
+    String discardPagesTitle = 'Discard scan?',
+    String discardPagesMessage =
+        'You have unsaved pages. Discard them and close the scanner?',
+    bool showHint = true,
+    bool showCloseButton = true,
+    bool enableEditCorners = true,
+    void Function(List<ScanResult> pages)? onPagesChanged,
+    Widget Function(BuildContext context, String message)? errorBuilder,
+    ScannerConfig config = const ScannerConfig(),
+  }) {
+    return Navigator.of(context).push<List<ScanResult>>(
+      MaterialPageRoute<List<ScanResult>>(
+        fullscreenDialog: true,
+        // No onComplete: the screen pops this route with the pages.
+        builder: (_) => DoclensMultiScreen(
+          maxPages: maxPages,
+          onPagesChanged: onPagesChanged,
+          enableAutoCapture: enableAutoCapture,
+          autoCaptureStabilityDuration: autoCaptureStabilityDuration,
+          autoCaptureConfirmationDelay: autoCaptureConfirmationDelay,
+          autoCaptureCornerThreshold: autoCaptureCornerThreshold,
+          enablePerspectiveWarp: enablePerspectiveWarp,
+          jpegQuality: jpegQuality,
+          imageEnhancement: imageEnhancement,
+          autoOrientation: autoOrientation,
+          initialFlashMode: initialFlashMode,
+          initialLens: initialLens,
+          enableTapToFocus: enableTapToFocus,
+          enablePinchToZoom: enablePinchToZoom,
+          detectionThrottleHz: detectionThrottleHz,
+          accentColor: accentColor,
+          warningColor: warningColor,
+          overlayStyle: overlayStyle,
+          backgroundColor: backgroundColor,
+          appBarTitle: appBarTitle,
+          captureHintText: captureHintText,
+          retakeLabel: retakeLabel,
+          editCornersLabel: editCornersLabel,
+          addPageLabel: addPageLabel,
+          doneLabel: doneLabel,
+          discardPagesTitle: discardPagesTitle,
+          discardPagesMessage: discardPagesMessage,
+          showHint: showHint,
+          showCloseButton: showCloseButton,
+          enableEditCorners: enableEditCorners,
+          errorBuilder: errorBuilder,
+          config: config,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DoclensScreen(
+      multiPage: true,
+      onComplete: onComplete,
+      maxPages: maxPages,
+      onPagesChanged: onPagesChanged,
+      enableAutoCapture: enableAutoCapture,
+      autoCaptureStabilityDuration: autoCaptureStabilityDuration,
+      autoCaptureConfirmationDelay: autoCaptureConfirmationDelay,
+      autoCaptureCornerThreshold: autoCaptureCornerThreshold,
+      enablePerspectiveWarp: enablePerspectiveWarp,
+      jpegQuality: jpegQuality,
+      imageEnhancement: imageEnhancement,
+      autoOrientation: autoOrientation,
+      initialFlashMode: initialFlashMode,
+      initialLens: initialLens,
+      enableTapToFocus: enableTapToFocus,
+      enablePinchToZoom: enablePinchToZoom,
+      detectionThrottleHz: detectionThrottleHz,
+      accentColor: accentColor,
+      warningColor: warningColor,
+      overlayStyle: overlayStyle,
+      backgroundColor: backgroundColor,
+      appBarTitle: appBarTitle,
+      captureHintText: captureHintText,
+      retakeLabel: retakeLabel,
+      editCornersLabel: editCornersLabel,
+      addPageLabel: addPageLabel,
+      doneLabel: doneLabel,
+      discardPagesTitle: discardPagesTitle,
+      discardPagesMessage: discardPagesMessage,
+      showHint: showHint,
+      showCloseButton: showCloseButton,
+      enableEditCorners: enableEditCorners,
+      errorBuilder: errorBuilder,
+      config: config,
+    );
+  }
+}
+
 class _DoclensScreenState extends State<DoclensScreen> {
   late final DoclensController _controller =
       DoclensController(config: _resolvedConfig());
@@ -559,18 +882,29 @@ class _DoclensScreenState extends State<DoclensScreen> {
     super.dispose();
   }
 
+  final List<ScanResult> _pages = [];
+
+  bool get _atPageLimit =>
+      widget.maxPages != null && _pages.length >= widget.maxPages!;
+
+  void _notifyPagesChanged() {
+    widget.onPagesChanged?.call(List.unmodifiable(_pages));
+  }
+
   Future<void> _handleCapture(ScanResult result) async {
     // Pause the live session while the user reviews — saves CPU + battery.
     await _controller.pause().catchError((_) {});
     if (!mounted) return;
-    final accepted = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
+    final accepted = await Navigator.of(context).push<ScanResult>(
+      MaterialPageRoute<ScanResult>(
         builder: (_) {
           // Full-replacement escape hatch: when `reviewBuilder` is set,
           // hand the dev a ready-to-go `DoclensReviewContext` and let
           // them render whatever they want. They still call
           // `review.onAccept` / `onRetake` / `onEditCorners` to drive
           // the state machine.
+          final useLabel =
+              widget.multiPage ? widget.addPageLabel : widget.useLabel;
           if (widget.reviewBuilder != null) {
             return _CustomReviewHost(
               result: result,
@@ -580,7 +914,7 @@ class _DoclensScreenState extends State<DoclensScreen> {
               appBarTitle: widget.appBarTitle,
               retakeLabel: widget.retakeLabel,
               editCornersLabel: widget.editCornersLabel,
-              useLabel: widget.useLabel,
+              useLabel: useLabel,
               enableEditCorners: widget.enableEditCorners,
               builder: widget.reviewBuilder!,
             );
@@ -593,7 +927,7 @@ class _DoclensScreenState extends State<DoclensScreen> {
             backgroundColor: widget.backgroundColor,
             retakeLabel: widget.retakeLabel,
             editCornersLabel: widget.editCornersLabel,
-            useLabel: widget.useLabel,
+            useLabel: useLabel,
             enableEditCorners: widget.enableEditCorners,
             headerBuilder: widget.reviewHeaderBuilder,
             imageBuilder: widget.reviewImageBuilder,
@@ -604,15 +938,90 @@ class _DoclensScreenState extends State<DoclensScreen> {
       ),
     );
     if (!mounted) return;
-    if (accepted == true) {
-      if (widget.onCapture != null) {
-        widget.onCapture!(result);
+    if (accepted != null) {
+      if (widget.multiPage) {
+        setState(() => _pages.add(accepted));
+        _notifyPagesChanged();
+        // At the cap we leave the session paused; the user must remove a
+        // page (or finish) before the shutter re-arms.
+        if (!_atPageLimit) await _controller.resume().catchError((_) {});
+      } else if (widget.onCapture != null) {
+        widget.onCapture!(accepted);
       } else {
-        Navigator.of(context).pop(result);
+        Navigator.of(context).pop(accepted);
       }
     } else {
+      // Retake / cancel: the raw still and original crop for this capture
+      // are now orphaned. (A superseded crop from edit-corners, if any, is
+      // cleaned by the review screen.)
+      _discardPageFiles(result);
       await _controller.resume().catchError((_) {});
     }
+  }
+
+  void _finishMultiPage() {
+    final pages = List<ScanResult>.from(_pages);
+    if (widget.onComplete != null) {
+      widget.onComplete!(pages);
+    } else {
+      Navigator.of(context).pop(pages);
+    }
+  }
+
+  Future<void> _handleClose() async {
+    if (widget.multiPage && _pages.isNotEmpty) {
+      final discard = await showDialog<bool>(
+        context: context,
+        builder: (dialogCtx) => _DiscardDialog(
+          title: widget.discardPagesTitle,
+          message: widget.discardPagesMessage,
+          accent: _accent,
+          keepLabel: 'Cancel',
+        ),
+      );
+      if (discard != true || !mounted) return;
+      final discarded = List<ScanResult>.from(_pages);
+      // Imperative pop bypasses our PopScope guard (canPop is false while
+      // pages exist), discarding the batch.
+      Navigator.of(context).pop();
+      for (final page in discarded) {
+        _discardPageFiles(page);
+      }
+      return;
+    }
+    if (mounted) Navigator.of(context).maybePop();
+  }
+
+  Future<void> _openGallery() async {
+    await _controller.pause().catchError((_) {});
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _PagesGalleryScreen(
+          pages: _pages,
+          accent: _accent,
+          backgroundColor: widget.backgroundColor,
+          appBarTitle: widget.appBarTitle,
+          doneLabel: widget.doneLabel,
+          onReorder: (oldIndex, newIndex) {
+            setState(() {
+              if (newIndex > oldIndex) newIndex -= 1;
+              final page = _pages.removeAt(oldIndex);
+              _pages.insert(newIndex, page);
+            });
+            _notifyPagesChanged();
+          },
+          onDelete: (index) {
+            final removed = _pages[index];
+            setState(() => _pages.removeAt(index));
+            _notifyPagesChanged();
+            _discardPageFiles(removed);
+          },
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (!_atPageLimit) await _controller.resume().catchError((_) {});
   }
 
   String _statusLabel(DetectionStatus s) {
@@ -647,7 +1056,13 @@ class _DoclensScreenState extends State<DoclensScreen> {
         accent: _accent,
       );
     }
-    return Scaffold(
+    final hasUncommittedPages = widget.multiPage && _pages.isNotEmpty;
+    return PopScope(
+      canPop: !hasUncommittedPages,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleClose();
+      },
+      child: Scaffold(
       backgroundColor: widget.backgroundColor,
       body: SafeArea(
         top: false,
@@ -704,7 +1119,7 @@ class _DoclensScreenState extends State<DoclensScreen> {
                 builder: (context, _) => _TopInstrumentBar(
                   showClose: widget.showCloseButton,
                   accent: _accent,
-                  onClose: () => Navigator.of(context).maybePop(),
+                  onClose: _handleClose,
                   flashMode: _controller.flashMode,
                   onFlash: () => _controller.cycleFlashMode(),
                 ),
@@ -740,21 +1155,30 @@ class _DoclensScreenState extends State<DoclensScreen> {
               left: 0,
               right: 0,
               bottom: 0,
-              child: _BottomShutterBand(
-                accent: _accent,
-                onCapture: _manualCapture,
-                isCapturing: _controller.isCapturing,
-                status: _controller.status,
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) => _BottomShutterBand(
+                  accent: _accent,
+                  onCapture: _manualCapture,
+                  isCapturing: _controller.isCapturing,
+                  status: _controller.status,
+                  pages: widget.multiPage ? _pages : null,
+                  atPageLimit: _atPageLimit,
+                  doneLabel: widget.doneLabel,
+                  onDone: _finishMultiPage,
+                  onOpenGallery: _openGallery,
+                ),
               ),
             ),
           ],
         ),
       ),
+      ),
     );
   }
 
   Future<void> _manualCapture() async {
-    if (_controller.isCapturing) return;
+    if (_controller.isCapturing || _atPageLimit) return;
     try {
       final result = await _controller.capture();
       await _handleCapture(result);
@@ -910,6 +1334,7 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
       ),
     );
     if (newPath != null && mounted) {
+      final superseded = _result.croppedImagePath;
       setState(() {
         _result = ScanResult(
           croppedImagePath: newPath,
@@ -918,7 +1343,20 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
           rawImageSize: _result.rawImageSize,
         );
       });
+      if (superseded != null && superseded != newPath) {
+        _deleteFileQuietly(superseded);
+      }
     }
+  }
+
+  /// Retake: drop any re-warped crop produced here (the original capture's
+  /// files are cleaned by the host screen).
+  void _retake() {
+    final edited = _result.croppedImagePath;
+    if (edited != null && edited != widget.result.croppedImagePath) {
+      _deleteFileQuietly(edited);
+    }
+    Navigator.of(context).pop();
   }
 
   @override
@@ -933,9 +1371,9 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
       editCornersLabel: widget.editCornersLabel,
       useLabel: widget.useLabel,
       enableEditCorners: widget.enableEditCorners,
-      onRetake: () => Navigator.of(context).pop(false),
+      onRetake: _retake,
       onEditCorners: _editCorners,
-      onAccept: () => Navigator.of(context).pop(true),
+      onAccept: () => Navigator.of(context).pop(_result),
     );
 
     final header = widget.headerBuilder?.call(context, review) ??
@@ -1033,6 +1471,7 @@ class _CustomReviewHostState extends State<_CustomReviewHost> {
       ),
     );
     if (newPath != null && mounted) {
+      final superseded = _result.croppedImagePath;
       setState(() {
         _result = ScanResult(
           croppedImagePath: newPath,
@@ -1041,7 +1480,18 @@ class _CustomReviewHostState extends State<_CustomReviewHost> {
           rawImageSize: _result.rawImageSize,
         );
       });
+      if (superseded != null && superseded != newPath) {
+        _deleteFileQuietly(superseded);
+      }
     }
+  }
+
+  void _retake() {
+    final edited = _result.croppedImagePath;
+    if (edited != null && edited != widget.result.croppedImagePath) {
+      _deleteFileQuietly(edited);
+    }
+    Navigator.of(context).pop();
   }
 
   @override
@@ -1055,9 +1505,9 @@ class _CustomReviewHostState extends State<_CustomReviewHost> {
       editCornersLabel: widget.editCornersLabel,
       useLabel: widget.useLabel,
       enableEditCorners: widget.enableEditCorners,
-      onRetake: () => Navigator.of(context).pop(false),
+      onRetake: _retake,
       onEditCorners: _editCorners,
-      onAccept: () => Navigator.of(context).pop(true),
+      onAccept: () => Navigator.of(context).pop(_result),
     );
     return widget.builder(context, review);
   }
@@ -1321,6 +1771,11 @@ class _BottomShutterBand extends StatelessWidget {
     required this.onCapture,
     required this.isCapturing,
     required this.status,
+    this.pages,
+    this.atPageLimit = false,
+    this.doneLabel = 'Done',
+    this.onDone,
+    this.onOpenGallery,
   });
 
   final Color accent;
@@ -1328,11 +1783,28 @@ class _BottomShutterBand extends StatelessWidget {
   final bool isCapturing;
   final DetectionStatus status;
 
+  /// Captured pages so far in multi-page mode, or `null` in single-page
+  /// mode (rail + done controls are hidden).
+  final List<ScanResult>? pages;
+  final bool atPageLimit;
+  final String doneLabel;
+  final VoidCallback? onDone;
+  final VoidCallback? onOpenGallery;
+
   @override
   Widget build(BuildContext context) {
     final mediaPadding = MediaQuery.of(context).padding.bottom;
+    final pages = this.pages;
+    final hasPages = pages != null && pages.isNotEmpty;
+    final shutter = _InstrumentShutter(
+      accent: accent,
+      isCapturing: isCapturing,
+      armed: status == DetectionStatus.aligned ||
+          status == DetectionStatus.confirming,
+      onTap: onCapture,
+    );
     return Container(
-      padding: EdgeInsets.fromLTRB(20, 22, 20, mediaPadding + 20),
+      padding: EdgeInsets.fromLTRB(20, 18, 20, mediaPadding + 20),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
@@ -1340,13 +1812,214 @@ class _BottomShutterBand extends StatelessWidget {
           colors: [Color(0xCC000000), Color(0x00000000)],
         ),
       ),
-      child: Center(
-        child: _InstrumentShutter(
-          accent: accent,
-          isCapturing: isCapturing,
-          armed: status == DetectionStatus.aligned ||
-              status == DetectionStatus.confirming,
-          onTap: onCapture,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasPages) ...[
+            _PageThumbRail(pages: pages, onTap: onOpenGallery),
+            const SizedBox(height: 14),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: hasPages
+                      ? _PageCountChip(
+                          count: pages.length,
+                          accent: accent,
+                          onTap: onOpenGallery,
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ),
+              if (atPageLimit)
+                Opacity(
+                  opacity: 0.4,
+                  child: IgnorePointer(child: shutter),
+                )
+              else
+                shutter,
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: pages != null
+                      ? _DoneButton(
+                          label: doneLabel,
+                          accent: accent,
+                          enabled: hasPages,
+                          onTap: onDone,
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PageThumbRail extends StatelessWidget {
+  const _PageThumbRail({required this.pages, required this.onTap});
+  final List<ScanResult> pages;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 64,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        itemCount: pages.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final page = pages[pages.length - 1 - i];
+          final index = pages.length - 1 - i;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: _PageThumb(page: page, label: '${index + 1}'),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PageThumb extends StatelessWidget {
+  const _PageThumb({required this.page, required this.label});
+  final ScanResult page;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = page.croppedImagePath ?? page.rawImagePath;
+    return Container(
+      width: 48,
+      height: 64,
+      decoration: BoxDecoration(
+        color: _kSurface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _kBorderSoft),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: Image.file(File(path), fit: BoxFit.cover),
+          ),
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: const BoxDecoration(
+                color: Color(0xCC000000),
+                borderRadius: BorderRadius.only(topRight: Radius.circular(5)),
+              ),
+              child: Text(
+                label,
+                style: _mono(
+                  size: 9,
+                  color: _kTextPrimary,
+                  weight: FontWeight.w600,
+                  letterSpacing: 0.0,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PageCountChip extends StatelessWidget {
+  const _PageCountChip({
+    required this.count,
+    required this.accent,
+    required this.onTap,
+  });
+  final int count;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _kBorderSoft),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.collections_outlined,
+                color: _kTextPrimary, size: 15),
+            const SizedBox(width: 7),
+            Text(
+              '$count',
+              style: _mono(
+                size: 13,
+                color: _kTextPrimary,
+                weight: FontWeight.w600,
+                letterSpacing: 0.0,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DoneButton extends StatelessWidget {
+  const _DoneButton({
+    required this.label,
+    required this.accent,
+    required this.enabled,
+    required this.onTap,
+  });
+  final String label;
+  final Color accent;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.4,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? onTap : null,
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(
+            color: accent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: _mono(
+                size: 13,
+                color: _kBgInk,
+                weight: FontWeight.w700,
+                letterSpacing: 0.0,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1799,6 +2472,252 @@ class _InstrumentErrorScreen extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---- multi-page gallery ----------------------------------------------
+
+/// Full-screen manager for a [DoclensMultiScreen] batch: reorder
+/// pages by drag, delete them, and tap "done" to return to the camera.
+class _PagesGalleryScreen extends StatefulWidget {
+  const _PagesGalleryScreen({
+    required this.pages,
+    required this.accent,
+    required this.backgroundColor,
+    required this.appBarTitle,
+    required this.doneLabel,
+    required this.onReorder,
+    required this.onDelete,
+  });
+
+  final List<ScanResult> pages;
+  final Color accent;
+  final Color backgroundColor;
+  final String appBarTitle;
+  final String doneLabel;
+  final void Function(int oldIndex, int newIndex) onReorder;
+  final void Function(int index) onDelete;
+
+  @override
+  State<_PagesGalleryScreen> createState() => _PagesGalleryScreenState();
+}
+
+class _PagesGalleryScreenState extends State<_PagesGalleryScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final pages = widget.pages;
+    return Scaffold(
+      backgroundColor: widget.backgroundColor,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _ReviewHeader(
+              title: '${widget.appBarTitle} · ${pages.length}',
+              accent: widget.accent,
+              onBack: () => Navigator.of(context).maybePop(),
+            ),
+            Expanded(
+              child: pages.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No pages',
+                        style: _mono(size: 12, color: _kTextSecondary),
+                      ),
+                    )
+                  : ReorderableListView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                      buildDefaultDragHandles: false,
+                      itemCount: pages.length,
+                      onReorder: (oldIndex, newIndex) {
+                        widget.onReorder(oldIndex, newIndex);
+                        setState(() {});
+                      },
+                      itemBuilder: (context, i) {
+                        final page = pages[i];
+                        return _GalleryRow(
+                          key: ObjectKey(page),
+                          index: i,
+                          page: page,
+                          onDelete: () {
+                            widget.onDelete(i);
+                            if (widget.pages.isEmpty) {
+                              Navigator.of(context).maybePop();
+                            } else {
+                              setState(() {});
+                            }
+                          },
+                        );
+                      },
+                    ),
+            ),
+            _GalleryActions(
+              doneLabel: widget.doneLabel,
+              accent: widget.accent,
+              onDone: () => Navigator.of(context).maybePop(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GalleryRow extends StatelessWidget {
+  const _GalleryRow({
+    required super.key,
+    required this.index,
+    required this.page,
+    required this.onDelete,
+  });
+  final int index;
+  final ScanResult page;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = page.croppedImagePath ?? page.rawImagePath;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _kSurface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _kBorderSoft),
+        ),
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.file(
+                File(path),
+                width: 52,
+                height: 68,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'Page ${index + 1}',
+                style: _mono(
+                  size: 13,
+                  color: _kTextPrimary,
+                  weight: FontWeight.w500,
+                  letterSpacing: 0.0,
+                ),
+              ),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onDelete,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.delete_outline, color: _kErrorTint, size: 20),
+              ),
+            ),
+            ReorderableDragStartListener(
+              index: index,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child:
+                    Icon(Icons.drag_handle, color: _kTextSecondary, size: 20),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GalleryActions extends StatelessWidget {
+  const _GalleryActions({
+    required this.doneLabel,
+    required this.accent,
+    required this.onDone,
+  });
+  final String doneLabel;
+  final Color accent;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaPadding = MediaQuery.of(context).padding.bottom;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 14, 20, mediaPadding + 18),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: _kBorderHairline)),
+      ),
+      child: Row(
+        children: [
+          const Spacer(),
+          _DoneButton(
+            label: doneLabel,
+            accent: accent,
+            enabled: true,
+            onTap: onDone,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscardDialog extends StatelessWidget {
+  const _DiscardDialog({
+    required this.title,
+    required this.message,
+    required this.accent,
+    required this.keepLabel,
+  });
+  final String title;
+  final String message;
+  final Color accent;
+  final String keepLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: _kSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: _kBorderSoft),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: _serif(size: 22, italic: true)),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              style: _mono(size: 12, color: _kTextSecondary, height: 1.5),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _GhostButton(
+                  label: keepLabel,
+                  onTap: () => Navigator.of(context).pop(false),
+                ),
+                const SizedBox(width: 10),
+                _DoneButton(
+                  label: 'Discard',
+                  accent: accent,
+                  enabled: true,
+                  onTap: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

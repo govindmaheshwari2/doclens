@@ -145,6 +145,32 @@ class ShowroomHome extends StatelessWidget {
       ),
       _StyleEntry(
         index: '02',
+        eyebrow: 'PACKAGE UI',
+        title: 'Multi-page batch',
+        subtitle:
+            'Keep the camera open and stack pages. Thumbnail rail, reorder + '
+            'delete from a built-in manager, then return the whole '
+            'List<ScanResult>.',
+        tags: const [
+          'DoclensMultiScreen.scan()',
+          'batch',
+          'reorder',
+        ],
+        accent: _kRust,
+        preview: const _DropInPreview(),
+        onTap: (ctx) async {
+          final pages = await DoclensMultiScreen.scan(
+            ctx,
+            autoOrientation: AutoOrientation.auto,
+          );
+          if (pages == null || pages.isEmpty || !ctx.mounted) return;
+          await Navigator.of(ctx).push<void>(
+            MaterialPageRoute(builder: (_) => _ReturnedBatch(pages: pages)),
+          );
+        },
+      ),
+      _StyleEntry(
+        index: '03',
         eyebrow: 'FULL CUSTOM',
         title: 'Branded scanner',
         subtitle: 'Bring your own brand. Animated halo, gradient shutter, live '
@@ -161,7 +187,7 @@ class ShowroomHome extends StatelessWidget {
         ),
       ),
       _StyleEntry(
-        index: '03',
+        index: '04',
         eyebrow: 'OS NATIVE',
         title: 'System scanner',
         subtitle: 'Hand off to the OS. Vision document camera on iOS, ML Kit '
@@ -1256,6 +1282,111 @@ class _ReturnedResultState extends State<_ReturnedResult> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// =====================================================================
+//  Returned-batch preview (multi-page entry)
+// =====================================================================
+
+class _ReturnedBatch extends StatelessWidget {
+  const _ReturnedBatch({required this.pages});
+  final List<ScanResult> pages;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _kPaper,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 14, 22, 4),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).maybePop(),
+                    child: Container(
+                      height: 36,
+                      width: 36,
+                      decoration: BoxDecoration(
+                        color: _kPaperHi,
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(color: _kRule),
+                      ),
+                      child: const Icon(Icons.arrow_back, color: _kInk, size: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'RETURNED BATCH',
+                          style: _mono(
+                            size: 10,
+                            color: _kRust,
+                            weight: FontWeight.w700,
+                            letterSpacing: 0.26,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${pages.length} page${pages.length == 1 ? '' : 's'}',
+                          style: _serifS(size: 22, italic: true),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.72,
+                ),
+                itemCount: pages.length,
+                itemBuilder: (context, i) {
+                  final page = pages[i];
+                  final path = page.croppedImagePath ?? page.rawImagePath;
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: _kPaperHi,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _kRule),
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Page ${i + 1}', style: _mono(size: 10)),
+                        const SizedBox(height: 6),
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.file(File(path), fit: BoxFit.cover,
+                                width: double.infinity),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
