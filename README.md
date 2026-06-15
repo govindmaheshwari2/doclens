@@ -17,9 +17,9 @@ Sobel + connected-components + convex-hull pipeline. The detected
   pipeline on Android. The 4-corner quad is streamed to Dart every frame.
 - **Three ways to scan** — a one-line drop-in screen, a fully branded
   custom UI on the package widget, or a hand-off to the OS-native scanner.
-- **Multi-page / batch scanning** — `DoclensScreen.scanMultiple(...)` keeps
-  the camera open, collects a stack of pages with a thumbnail rail, and
-  returns them in order; reorder and delete from a built-in page manager.
+- **Multi-page / batch scanning** — `DoclensMultiScreen` keeps the camera
+  open, collects a stack of pages with a thumbnail rail, and returns them
+  in order; reorder and delete from a built-in page manager.
 - **Auto-capture with confirmation** — fires once the document is framed
   and held still, with a brief "hold still" window you can abort.
 - **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
@@ -63,22 +63,34 @@ final result = await DoclensScreen.scan(
 Every `DoclensScreen` parameter has rich dartdoc explaining the default,
 the trade-off, and when to override.
 
-**Multi-page / batch.** Call `DoclensScreen.scanMultiple(...)` to keep the
-camera open and collect a stack of pages in one session:
+**Multi-page / batch.** `DoclensMultiScreen` is the batch sibling of
+`DoclensScreen` — keep the camera open and collect a stack of pages in one
+session. Use it as a one-line route:
 
 ```dart
-final List<ScanResult>? pages = await DoclensScreen.scanMultiple(context);
+final List<ScanResult>? pages = await DoclensMultiScreen.scan(context);
 if (pages == null) return;             // user cancelled
 for (final page in pages) {
   print(page.croppedImagePath);
 }
 ```
 
+…or mount it directly as a widget and handle the result yourself via
+`onComplete` (the batch analogue of `DoclensScreen.onCapture`):
+
+```dart
+DoclensMultiScreen(
+  onComplete: (pages) {
+    // pages: List<ScanResult>, in order
+  },
+)
+```
+
 The live preview grows a thumbnail rail and a **Done** button; the review
 screen's accept button reads **Add**. Tap the rail to open a page manager
 that **reorders** (drag) and **deletes** pages, and closing with
 uncommitted pages prompts a discard confirmation. Pass `maxPages` to cap
-the batch; every other `scan(...)` knob (enhancement, auto-orientation,
+the batch; every other `DoclensScreen` knob (enhancement, auto-orientation,
 overlay style, review builders, …) carries over.
 
 ### 2. Custom UI — full control with `DoclensView`
@@ -339,11 +351,14 @@ on demand by Google Play services. Gracefully fails with
 
 ## API surface
 
-- **`DoclensScreen`** — drop-in scanner route. `DoclensScreen.scan(ctx)`
+- **`DoclensScreen`** — drop-in single-page scanner. `DoclensScreen.scan(ctx)`
   pushes a full-screen route, awaits a `ScanResult?`, and pops itself
-  when the user accepts or cancels. `DoclensScreen.scanMultiple(ctx)`
-  runs the same screen in multi-page mode and awaits a
-  `List<ScanResult>?`.
+  when the user accepts or cancels; or mount the widget directly and use
+  `onCapture`.
+- **`DoclensMultiScreen`** — drop-in multi-page / batch scanner.
+  `DoclensMultiScreen.scan(ctx)` awaits a `List<ScanResult>?`; or mount the
+  widget directly and use `onComplete`. Thumbnail rail, reorder/delete
+  manager, `maxPages` cap.
 - **`DoclensController`** — owns a session. Streams: `quadStream`,
   `statusStream`, `autoCaptureStream`, `lowLightStream`,
   `previewSizeStream`. Methods: `initialize()`, `capture()`,

@@ -152,14 +152,14 @@ class ShowroomHome extends StatelessWidget {
             'delete from a built-in manager, then return the whole '
             'List<ScanResult>.',
         tags: const [
-          'DoclensScreen.scanMultiple()',
+          'DoclensMultiScreen.scan()',
           'batch',
           'reorder',
         ],
         accent: _kRust,
         preview: const _DropInPreview(),
         onTap: (ctx) async {
-          final pages = await DoclensScreen.scanMultiple(
+          final pages = await DoclensMultiScreen.scan(
             ctx,
             autoOrientation: AutoOrientation.auto,
           );
