@@ -20,6 +20,11 @@
   user adjusts corners before accepting (previously the pre-edit result
   was returned). `DoclensReviewScreen` pops a `ScanResult?` instead of a
   `bool`.
+- Scratch images are now cleaned up instead of accumulating in the temp
+  directory: a retaken/cancelled capture, a crop superseded by edit-corners,
+  a page deleted from a batch, and a discarded multi-page session all delete
+  their backing files. Files for pages you keep (returned from `scan` /
+  `scanMultiple`) are never touched — the caller owns them.
 
 **Auto-orientation (upright) for the cropped output, plus a manual rotate API**
 
