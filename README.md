@@ -10,6 +10,9 @@ The detected document outline — a 4-corner quad — is streamed to Dart on eve
   pipeline on Android. The 4-corner quad is streamed to Dart every frame.
 - **Three ways to scan** — a one-line drop-in screen, a fully branded
   custom UI on the package widget, or a hand-off to the OS-native scanner.
+- **Multi-page / batch scanning** — `DoclensMultiScreen` keeps the camera
+  open, collects a stack of pages with a thumbnail rail, and returns them
+  in order; reorder and delete from a built-in page manager.
 - **Auto-capture with confirmation** — fires once the document is framed
   and held still, with a brief "hold still" window you can abort.
 - **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
@@ -74,6 +77,36 @@ final result = await DoclensScreen.scan(
 ```
 
 Every parameter has dartdoc explaining its default and when you'd want to change it.
+
+**Multi-page / batch.** `DoclensMultiScreen` is the batch sibling of
+`DoclensScreen` — keep the camera open and collect a stack of pages in one
+session. Use it as a one-line route:
+
+```dart
+final List<ScanResult>? pages = await DoclensMultiScreen.scan(context);
+if (pages == null) return;             // user cancelled
+for (final page in pages) {
+  print(page.croppedImagePath);
+}
+```
+
+…or mount it directly as a widget and handle the result yourself via
+`onComplete` (the batch analogue of `DoclensScreen.onCapture`):
+
+```dart
+DoclensMultiScreen(
+  onComplete: (pages) {
+    // pages: List<ScanResult>, in order
+  },
+)
+```
+
+The live preview grows a thumbnail rail and a **Done** button; the review
+screen's accept button reads **Add**. Tap the rail to open a page manager
+that **reorders** (drag) and **deletes** pages, and closing with
+uncommitted pages prompts a discard confirmation. Pass `maxPages` to cap
+the batch; every other `DoclensScreen` knob (enhancement, auto-orientation,
+overlay style, review builders, …) carries over.
 
 **Multi-page / batch.** `DoclensMultiScreen` is the batch sibling of
 `DoclensScreen` — keep the camera open and collect a stack of pages in one
