@@ -36,30 +36,39 @@ object TextOrientationDetector {
      */
     fun bestClockwiseTurns(bitmap: Bitmap): Int {
         val small = downscale(bitmap, 1000)
-        var bestTurns = 0
-        var bestScore = 0.0
-        // `InputImage.fromBitmap(bm, rotationDegrees)` follows the CameraX
-        // convention: `rotationDegrees` is the *clockwise* rotation that brings
-        // the buffer upright, which ML Kit applies before recognition. So if
-        // text reads best after rotating `deg` clockwise, that same rotation
-        // (deg / 90 turns) is what we bake into the output.
-        for (deg in intArrayOf(0, 90, 180, 270)) {
-            val score = try {
-                val image = InputImage.fromBitmap(small, deg)
-                val text = Tasks.await(recognizer.process(image), 3, TimeUnit.SECONDS)
-                scoreOf(text)
-            } catch (_: Exception) {
-                0.0
+        try {
+            var bestTurns = 0
+            var bestScore = 0.0
+            // `InputImage.fromBitmap(bm, rotationDegrees)` follows the CameraX
+            // convention: `rotationDegrees` is the *clockwise* rotation that
+            // brings the buffer upright, which ML Kit applies before
+            // recognition. So if text reads best after rotating `deg`
+            // clockwise, that same rotation (deg / 90 turns) is baked into the
+            // output.
+            for (deg in intArrayOf(0, 90, 180, 270)) {
+                val text = try {
+                    Tasks.await(
+                        recognizer.process(InputImage.fromBitmap(small, deg)),
+                        3, TimeUnit.SECONDS,
+                    )
+                } catch (_: Exception) {
+                    // The recognizer is unavailable (model still downloading on
+                    // demand) or timed out. Bail rather than burn three more
+                    // timeouts on the capture path — leave the crop as-is.
+                    return 0
+                }
+                val score = scoreOf(text)
+                if (score > bestScore) {
+                    bestScore = score
+                    bestTurns = deg / 90
+                }
             }
-            if (score > bestScore) {
-                bestScore = score
-                bestTurns = deg / 90
-            }
+            // Require a meaningful amount of confident text before trusting a
+            // rotation — otherwise speckle on a near-blank page could spin it.
+            return if (bestScore >= 1.0) bestTurns else 0
+        } finally {
+            if (small !== bitmap) small.recycle()
         }
-        if (small !== bitmap) small.recycle()
-        // Require a meaningful amount of confident text before trusting a
-        // rotation — otherwise speckle on a near-blank page could spin it.
-        return if (bestScore >= 1.0) bestTurns else 0
     }
 
     private fun scoreOf(text: Text): Double {
