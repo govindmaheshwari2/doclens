@@ -1,5 +1,26 @@
 ## 0.0.5
 
+**Multi-page / batch scanning in the drop-in scanner**
+
+- New `DoclensScreen.scanMultiple(context, ...)` returns
+  `Future<List<ScanResult>?>` — the user captures any number of pages
+  without leaving the camera and taps "Done" to finish (or cancels for
+  `null`). Each page still flows through the same review screen (retake /
+  edit corners / accept).
+- The live preview grows a thumbnail rail of captured pages, a page-count
+  chip, and a "Done" button; the review screen's accept button reads "Add".
+- Tapping the rail opens a full-screen page manager to **reorder** (drag)
+  and **delete** pages. Closing a session with uncommitted pages — via the
+  close button or system back — prompts a discard confirmation.
+- Optional `maxPages` cap, plus configurable labels (`addPageLabel`,
+  `doneLabel`), discard-dialog strings, and an `onPagesChanged` callback.
+- Every behaviour/UI knob from `scan` (enhancement, auto-orientation,
+  flash, overlay style, review builders, …) carries over.
+- The post-capture review now returns the *edited* `ScanResult` when the
+  user adjusts corners before accepting (previously the pre-edit result
+  was returned). `DoclensReviewScreen` pops a `ScanResult?` instead of a
+  `bool`.
+
 **Auto-orientation (upright) for the cropped output, plus a manual rotate API**
 
 - New `ScannerConfig.autoOrientation` (and matching `DoclensScreen` parameter):
