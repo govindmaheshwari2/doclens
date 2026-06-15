@@ -24,6 +24,26 @@ The detected document outline — a 4-corner quad — is streamed to Dart on eve
 - **Edit corners after capture** — drag-the-corners helper with re-warp on
   save; every handle and button is overridable.
 
+## Features
+
+- **Native edge detection** — Apple Vision on iOS, a pure-Kotlin CameraX
+  pipeline on Android. The 4-corner quad is streamed to Dart every frame.
+- **Three ways to scan** — a one-line drop-in screen, a fully branded
+  custom UI on the package widget, or a hand-off to the OS-native scanner.
+- **Auto-capture with confirmation** — fires once the document is framed
+  and held still, with a brief "hold still" window you can abort.
+- **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
+  modes, and camera switch.
+- **Perspective-correct crop** — the detected quad is dewarped to a clean,
+  flat document image.
+- **Image enhancement & shadow removal** — grayscale, shadow-corrected
+  colour ("magic colour"), and near-bitonal black-and-white for OCR. Runs
+  on-device with no bundled model and no extra dependency.
+- **Auto-orientation & rotate** — straighten the crop upright from its
+  detected text direction, plus a manual `rotateImage` API.
+- **Edit corners after capture** — drag-the-corners helper with re-warp on
+  save; every handle and button is overridable.
+
 ## Three ways to scan
 
 There are three ways to use this package, from "one line and done" to "I'll draw everything myself."
