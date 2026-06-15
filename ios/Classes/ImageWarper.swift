@@ -20,7 +20,8 @@ enum ImageWarper {
     /// Apply a perspective correction to [cgImage] using corner points in
     /// the image's own pixel coordinates (origin top-left, y-down).
     /// CoreImage uses bottom-left origin, so we flip Y before calling.
-    static func warp(cgImage: CGImage, quad: Quad, jpegQuality: Int) throws -> String {
+    static func warp(cgImage: CGImage, quad: Quad, jpegQuality: Int,
+                     enhancement: String = "none") throws -> String {
         let ci = CIImage(cgImage: cgImage)
         let w = ci.extent.width
         let h = ci.extent.height
@@ -70,7 +71,11 @@ enum ImageWarper {
             throw ImageWarperError.warpFailed(
                 "CIPerspectiveCorrection produced an invalid extent (\(extent))")
         }
-        guard let cg = ciContext.createCGImage(out, from: extent) else {
+        // Optional post-warp enhancement. The filters used preserve the
+        // extent, so we keep rendering from the geometry extent computed
+        // above.
+        let enhanced = applyEnhancement(out, mode: enhancement)
+        guard let cg = ciContext.createCGImage(enhanced, from: extent) else {
             throw ImageWarperError.warpFailed("CGImage render failed (extent=\(extent))")
         }
         let img = UIImage(cgImage: cg)
@@ -79,6 +84,83 @@ enum ImageWarper {
             throw ImageWarperError.warpFailed("JPEG encode failed")
         }
         return try TempFiles.write(jpegData: data, quality: q)
+    }
+
+    /// Apply an optional shadow-aware enhancement to the perspective-corrected
+    /// image. `none` returns the image as-is.
+    ///
+    /// `enhanced` and `blackAndWhite` lean on `CIDocumentEnhancer` (iOS 16+),
+    /// Apple's built-in document cleanup that removes shadows, whitens the
+    /// background, and boosts contrast. `blackAndWhite` desaturates then
+    /// binarises with `CIColorThresholdOtsu` (iOS 14+). On older OSes we fall
+    /// back to `CIHighlightShadowAdjust`, which locally lifts shadow detail.
+    /// `grayscale` is a plain global desaturate.
+    private static func applyEnhancement(_ image: CIImage, mode: String) -> CIImage {
+        switch mode {
+        case "grayscale":
+            return colorControls(image, saturation: 0, brightness: 0, contrast: 1.05)
+        case "enhanced":
+            return documentEnhanced(image) ?? shadowLift(image)
+        case "blackAndWhite":
+            let cleaned = documentEnhanced(image) ?? shadowLift(image)
+            // Desaturate before Otsu so all three channels share one threshold
+            // — otherwise per-channel binarisation can leave colour fringes.
+            let gray = colorControls(cleaned, saturation: 0, brightness: 0, contrast: 1.0)
+            return binarize(gray)
+                ?? colorControls(gray, saturation: 0, brightness: 0, contrast: 2.4)
+        default:
+            return image
+        }
+    }
+
+    /// Apple's turnkey document enhancer (shadow removal + background
+    /// whitening + contrast). `amount` is on a 0–10 scale; 1.0 is a moderate,
+    /// safe default. Returns nil on iOS < 16 so the caller can fall back.
+    private static func documentEnhanced(_ image: CIImage) -> CIImage? {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            guard let f = CIFilter(name: "CIDocumentEnhancer") else { return nil }
+            f.setValue(image, forKey: kCIInputImageKey)
+            f.setValue(1.0, forKey: "inputAmount")
+            return f.outputImage
+        }
+        return nil
+    }
+
+    /// Automatic Otsu binarisation (iOS 14+). Returns nil on older OSes.
+    private static func binarize(_ image: CIImage) -> CIImage? {
+        if #available(iOS 14.0, macOS 11.0, *) {
+            guard let f = CIFilter(name: "CIColorThresholdOtsu") else { return nil }
+            f.setValue(image, forKey: kCIInputImageKey)
+            return f.outputImage
+        }
+        return nil
+    }
+
+    /// Fallback for OSes without `CIDocumentEnhancer`: `CIHighlightShadowAdjust`
+    /// is a locally/spatially adaptive tone mapping (it takes a radius and
+    /// "preserves spatial detail"), so it genuinely lifts shadow regions
+    /// rather than applying a global curve. Followed by a gentle
+    /// brighten/contrast to whiten the background.
+    private static func shadowLift(_ image: CIImage) -> CIImage {
+        guard let f = CIFilter(name: "CIHighlightShadowAdjust") else {
+            return colorControls(image, saturation: 1.05, brightness: 0.05, contrast: 1.1)
+        }
+        f.setValue(image, forKey: kCIInputImageKey)
+        f.setValue(0.8, forKey: "inputShadowAmount") // 0 (none) … 1 (max lift)
+        let lifted = f.outputImage ?? image
+        return colorControls(lifted, saturation: 1.05, brightness: 0.03, contrast: 1.1)
+    }
+
+    private static func colorControls(_ image: CIImage,
+                                      saturation: CGFloat,
+                                      brightness: CGFloat,
+                                      contrast: CGFloat) -> CIImage {
+        guard let f = CIFilter(name: "CIColorControls") else { return image }
+        f.setValue(image, forKey: kCIInputImageKey)
+        f.setValue(saturation, forKey: kCIInputSaturationKey)
+        f.setValue(brightness, forKey: kCIInputBrightnessKey)
+        f.setValue(contrast, forKey: kCIInputContrastKey)
+        return f.outputImage ?? image
     }
 
     /// Sanity-check the quad before handing it to CoreImage.
@@ -114,12 +196,14 @@ enum ImageWarper {
     }
 
     /// Read an image from disk, warp it, write a new file. Used by warpImage().
-    static func warpFile(inputPath: String, quad: Quad, jpegQuality: Int) throws -> String {
+    static func warpFile(inputPath: String, quad: Quad, jpegQuality: Int,
+                         enhancement: String = "none") throws -> String {
         guard let img = UIImage(contentsOfFile: inputPath),
               let cg = img.uprightCGImage() else {
             throw ImageWarperError.ioError("Cannot read image at \(inputPath)")
         }
-        return try warp(cgImage: cg, quad: quad, jpegQuality: jpegQuality)
+        return try warp(cgImage: cg, quad: quad, jpegQuality: jpegQuality,
+                        enhancement: enhancement)
     }
 }
 

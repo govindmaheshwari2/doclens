@@ -44,6 +44,42 @@ enum CameraLens { back, front }
 
 enum ImageFormat { jpeg, png }
 
+/// Optional post-warp image processing applied to the cropped document.
+///
+/// Enhancement runs on the perspective-corrected crop only — the raw image
+/// ([ScanResult.rawImagePath]) is always left untouched. It is applied both
+/// to the capture's cropped output and to re-warps performed via
+/// `EditCornersScreen`.
+///
+/// [enhanced] and [blackAndWhite] remove uneven lighting and soft shadows:
+/// on iOS via Apple's `CIDocumentEnhancer` (with a manual illumination-
+/// division fallback on older OSes), and on Android via an equivalent
+/// background-division ("flatten") pass. No model is bundled and no extra
+/// dependency is required.
+enum ImageEnhancement {
+  /// No processing — the cropped output is the original pixels, just
+  /// dewarped. Most faithful; best when you run your own preprocessing or
+  /// want unmodified bytes for archival.
+  none,
+
+  /// Desaturate to grayscale. A plain global desaturate (no shadow
+  /// handling) — neutral tone, smaller files, calmer look for mixed
+  /// photo/text pages.
+  grayscale,
+
+  /// Shadow-corrected colour scan ("magic colour"): estimates the lighting
+  /// and divides it out so uneven illumination and soft shadows are removed
+  /// and the background is whitened, while colour is preserved. Good
+  /// general-purpose choice for photos of documents shot in uneven light.
+  enhanced,
+
+  /// Shadow-corrected, near-bitonal "document" look: flattens the lighting
+  /// then thresholds locally (adaptive / Otsu) for clean black text on a
+  /// white background. Best for plain text pages and OCR on faint or
+  /// low-contrast print.
+  blackAndWhite,
+}
+
 /// Capture resolution hint. The native side picks the closest supported preset.
 enum Resolution { auto, high, max }
 
@@ -116,6 +152,7 @@ class ScannerConfig {
     // Capture
     this.enablePerspectiveWarp = true,
     this.jpegQuality = 100,
+    this.imageEnhancement = ImageEnhancement.none,
     this.outputFormat = ImageFormat.jpeg,
     this.captureResolution = Resolution.high,
     // Camera
@@ -195,6 +232,12 @@ class ScannerConfig {
   /// and ~3× smaller).
   final int jpegQuality;
 
+  /// Post-warp processing applied to the cropped document image. Defaults
+  /// to [ImageEnhancement.none] (pure dewarp, unmodified pixels). Applies
+  /// to both the capture's cropped output and re-warps via
+  /// `EditCornersScreen`. The raw image is never enhanced.
+  final ImageEnhancement imageEnhancement;
+
   /// Output container format for captures. JPEG is the only fully
   /// supported value today; PNG is reserved for a future release.
   final ImageFormat outputFormat;
@@ -272,6 +315,7 @@ class ScannerConfig {
         'detectionThrottleHz': detectionThrottleHz,
         'enablePerspectiveWarp': enablePerspectiveWarp,
         'jpegQuality': jpegQuality,
+        'imageEnhancement': imageEnhancement.name,
         'outputFormat': outputFormat.name,
         'captureResolution': captureResolution.name,
         'initialFlashMode': initialFlashMode.name,

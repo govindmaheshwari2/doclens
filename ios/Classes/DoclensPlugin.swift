@@ -117,11 +117,13 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
             return
         }
         let jpegQuality = (args["jpegQuality"] as? Int) ?? 100
+        let enhancement = (args["enhancement"] as? String) ?? "none"
         let quad = Quad.fromMap(quadMap)
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let out = try ImageWarper.warpFile(
-                    inputPath: path, quad: quad, jpegQuality: jpegQuality)
+                    inputPath: path, quad: quad, jpegQuality: jpegQuality,
+                    enhancement: enhancement)
                 DispatchQueue.main.async { result(out) }
             } catch {
                 DispatchQueue.main.async {

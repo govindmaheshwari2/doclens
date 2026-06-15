@@ -77,6 +77,10 @@ class _BrandedStyleScannerState extends State<BrandedStyleScanner>
     config: const ScannerConfig(
       detectionThrottleHz: 18,
       autoCaptureStabilityDuration: Duration(milliseconds: 1100),
+      // Shadow-corrected "magic colour" on the cropped output. Travels on
+      // the controller config, so both the capture and the edit-corners
+      // re-warp (result_screen → controller.warpImage) pick it up.
+      imageEnhancement: ImageEnhancement.enhanced,
     ),
   );
 

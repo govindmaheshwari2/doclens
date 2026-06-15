@@ -523,7 +523,8 @@ extension ScannerSession: AVCapturePhotoCaptureDelegate {
                 croppedPath = try ImageWarper.warp(
                     cgImage: cgImage,
                     quad: q,
-                    jpegQuality: config.jpegQuality)
+                    jpegQuality: config.jpegQuality,
+                    enhancement: config.imageEnhancement)
             } catch {
                 // Don't fail the whole capture — surface the warp error
                 // so callers can decide to retake, but still give them the

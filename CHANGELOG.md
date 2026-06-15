@@ -1,5 +1,24 @@
 ## 0.0.5
 
+**Image enhancement & shadow removal on the cropped output**
+
+- New `ScannerConfig.imageEnhancement` (and matching `DoclensScreen`
+  parameter) applies a post-warp filter to the cropped document:
+  `none` (default, unchanged behaviour), `grayscale` (plain desaturate),
+  `enhanced` (shadow-corrected colour "magic colour"), or `blackAndWhite`
+  (shadow-corrected near-bitonal — best for OCR on faint text).
+- `enhanced` and `blackAndWhite` genuinely remove uneven lighting and soft
+  shadows via on-device illumination-division ("flatten"), not just global
+  contrast. No model is bundled and no extra dependency is added.
+  - iOS: Apple's `CIDocumentEnhancer` (iOS 16+) with a `CIHighlightShadowAdjust`
+    fallback on older OSes; `blackAndWhite` desaturates then binarises with
+    `CIColorThresholdOtsu`.
+  - Android: background estimated from a heavily downscaled copy and divided
+    out per pixel; `blackAndWhite` uses adaptive-mean thresholding.
+- Applies to both the capture's cropped output and re-warps performed via
+  `EditCornersScreen` (it travels on the controller's config and the
+  `warpImage` channel call). The raw image is never modified.
+
 **Android: crop lands in the wrong position after editing corners**
 
 - On Android, large captures are decoded downscaled (`decodeDownscaled`,

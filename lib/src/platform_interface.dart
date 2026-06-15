@@ -45,6 +45,7 @@ abstract class DoclensPlatform extends PlatformInterface {
     required String rawImagePath,
     required Quad quad,
     int jpegQuality = 100,
+    ImageEnhancement enhancement = ImageEnhancement.none,
   });
 
   Future<void> setFlashMode(FlashMode mode);

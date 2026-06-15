@@ -187,6 +187,46 @@ EditCornersScreen(
 Every handle, line, and button on `EditCornersScreen` is overridable via
 builders.
 
+## Image enhancement & shadow removal
+
+By default the cropped output is a pure dewarp — the original pixels,
+straightened, with nothing else touched. Set `imageEnhancement` to apply a
+post-warp filter to the **cropped** image (the raw image is never modified):
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  imageEnhancement: ImageEnhancement.blackAndWhite, // best for OCR
+);
+```
+
+| Mode | Effect | Good for |
+| --- | --- | --- |
+| `none` (default) | Pure dewarp, unmodified pixels | Archival, your own preprocessing |
+| `grayscale` | Plain desaturate (no shadow handling) | Neutral look, smaller files |
+| `enhanced` | **Shadow removal** + background whitening, colour kept ("magic colour") | Photos in uneven light |
+| `blackAndWhite` | **Shadow removal** + adaptive/Otsu threshold, near-bitonal | Plain text, OCR on faint print |
+
+`enhanced` and `blackAndWhite` genuinely remove uneven lighting and soft
+shadows — not just global contrast. The technique is the classic
+illumination-division ("flatten") used by document scanners: estimate the
+lighting and divide it out. It runs entirely on-device with **no bundled
+model and no extra dependency**:
+
+- **iOS** uses Apple's built-in `CIDocumentEnhancer` (iOS 16+), falling back
+  to `CIHighlightShadowAdjust` (local shadow lift) on older OSes;
+  `blackAndWhite` desaturates then binarises with `CIColorThresholdOtsu`.
+- **Android** estimates the background from a heavily downscaled copy and
+  divides it out per pixel (adaptive-mean thresholding for `blackAndWhite`).
+
+Enhancement applies to both the capture's cropped output and any re-warp
+done through `EditCornersScreen` (it travels on the controller's config).
+It's a knob on `ScannerConfig` too, so it works from every entry point.
+
+> For the absolute best shadow/glare removal, the OS-native scanners
+> (`scanWithNativeUI`) apply Apple's / Google's own document cleanup — at the
+> cost of using their full-screen UI instead of this package's custom flow.
+
 ## Platform setup
 
 ### iOS
