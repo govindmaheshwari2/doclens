@@ -62,6 +62,26 @@ TextStyle _serif({
       height: height,
     );
 
+/// Best-effort delete of a scratch image the screen produced. Swallows
+/// every error (missing file, races) — temp cleanup must never throw into
+/// the UI.
+Future<void> _deleteFileQuietly(String? path) async {
+  if (path == null || path.isEmpty) return;
+  try {
+    await File(path).delete();
+  } catch (_) {}
+}
+
+/// Delete both images backing a discarded [page] (a rejected capture or a
+/// page removed from a multi-page batch). The raw and crop are distinct
+/// files written per capture, so neither is shared with a retained page.
+void _discardPageFiles(ScanResult page) {
+  _deleteFileQuietly(page.croppedImagePath);
+  if (page.rawImagePath != page.croppedImagePath) {
+    _deleteFileQuietly(page.rawImagePath);
+  }
+}
+
 /// Drop-in document scanner screen. Owns its own controller, runs the live
 /// preview, auto-captures, then presents a built-in review screen with
 /// retake / edit-corners / accept buttons.
@@ -765,6 +785,10 @@ class _DoclensScreenState extends State<DoclensScreen> {
         Navigator.of(context).pop(accepted);
       }
     } else {
+      // Retake / cancel: the raw still and original crop for this capture
+      // are now orphaned. (A superseded crop from edit-corners, if any, is
+      // cleaned by the review screen.)
+      _discardPageFiles(result);
       await _controller.resume().catchError((_) {});
     }
   }
@@ -785,9 +809,13 @@ class _DoclensScreenState extends State<DoclensScreen> {
         ),
       );
       if (discard != true || !mounted) return;
+      final discarded = List<ScanResult>.from(_pages);
       // Imperative pop bypasses our PopScope guard (canPop is false while
       // pages exist), discarding the batch.
       Navigator.of(context).pop();
+      for (final page in discarded) {
+        _discardPageFiles(page);
+      }
       return;
     }
     if (mounted) Navigator.of(context).maybePop();
@@ -813,8 +841,10 @@ class _DoclensScreenState extends State<DoclensScreen> {
             _notifyPagesChanged();
           },
           onDelete: (index) {
+            final removed = _pages[index];
             setState(() => _pages.removeAt(index));
             _notifyPagesChanged();
+            _discardPageFiles(removed);
           },
         ),
       ),
@@ -1133,6 +1163,7 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
       ),
     );
     if (newPath != null && mounted) {
+      final superseded = _result.croppedImagePath;
       setState(() {
         _result = ScanResult(
           croppedImagePath: newPath,
@@ -1141,7 +1172,20 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
           rawImageSize: _result.rawImageSize,
         );
       });
+      if (superseded != null && superseded != newPath) {
+        _deleteFileQuietly(superseded);
+      }
     }
+  }
+
+  /// Retake: drop any re-warped crop produced here (the original capture's
+  /// files are cleaned by the host screen).
+  void _retake() {
+    final edited = _result.croppedImagePath;
+    if (edited != null && edited != widget.result.croppedImagePath) {
+      _deleteFileQuietly(edited);
+    }
+    Navigator.of(context).pop();
   }
 
   @override
@@ -1156,7 +1200,7 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
       editCornersLabel: widget.editCornersLabel,
       useLabel: widget.useLabel,
       enableEditCorners: widget.enableEditCorners,
-      onRetake: () => Navigator.of(context).pop(),
+      onRetake: _retake,
       onEditCorners: _editCorners,
       onAccept: () => Navigator.of(context).pop(_result),
     );
@@ -1256,6 +1300,7 @@ class _CustomReviewHostState extends State<_CustomReviewHost> {
       ),
     );
     if (newPath != null && mounted) {
+      final superseded = _result.croppedImagePath;
       setState(() {
         _result = ScanResult(
           croppedImagePath: newPath,
@@ -1264,7 +1309,18 @@ class _CustomReviewHostState extends State<_CustomReviewHost> {
           rawImageSize: _result.rawImageSize,
         );
       });
+      if (superseded != null && superseded != newPath) {
+        _deleteFileQuietly(superseded);
+      }
     }
+  }
+
+  void _retake() {
+    final edited = _result.croppedImagePath;
+    if (edited != null && edited != widget.result.croppedImagePath) {
+      _deleteFileQuietly(edited);
+    }
+    Navigator.of(context).pop();
   }
 
   @override
@@ -1278,7 +1334,7 @@ class _CustomReviewHostState extends State<_CustomReviewHost> {
       editCornersLabel: widget.editCornersLabel,
       useLabel: widget.useLabel,
       enableEditCorners: widget.enableEditCorners,
-      onRetake: () => Navigator.of(context).pop(),
+      onRetake: _retake,
       onEditCorners: _editCorners,
       onAccept: () => Navigator.of(context).pop(_result),
     );
