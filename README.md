@@ -23,11 +23,11 @@ Sobel + connected-components + convex-hull pipeline. The detected
   modes, and camera switch.
 - **Perspective-correct crop** — the detected quad is dewarped to a clean,
   flat document image.
-- **Image enhancement & shadow removal** *(0.0.5)* — grayscale, shadow-
-  corrected colour ("magic colour"), and near-bitonal black-and-white for
-  OCR. Runs on-device with no bundled model and no extra dependency.
-- **Auto-orientation & rotate** *(0.0.5)* — straighten the crop upright
-  from its detected text direction, plus a manual `rotateImage` API.
+- **Image enhancement & shadow removal** — grayscale, shadow-corrected
+  colour ("magic colour"), and near-bitonal black-and-white for OCR. Runs
+  on-device with no bundled model and no extra dependency.
+- **Auto-orientation & rotate** — straighten the crop upright from its
+  detected text direction, plus a manual `rotateImage` API.
 - **Edit corners after capture** — drag-the-corners helper with re-warp on
   save; every handle and button is overridable.
 
