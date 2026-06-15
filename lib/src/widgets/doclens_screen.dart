@@ -143,6 +143,7 @@ class DoclensScreen extends StatefulWidget {
     this.discardPagesMessage =
         'You have unsaved pages. Discard them and close the scanner?',
     this.onPagesChanged,
+    this.onComplete,
     // --- review-screen builders ---
     this.reviewBuilder,
     this.reviewHeaderBuilder,
@@ -357,7 +358,8 @@ class DoclensScreen extends StatefulWidget {
 
   /// When `true`, the scanner stays open after each accepted page and
   /// accumulates them into a batch instead of popping on the first
-  /// capture. Use [scanMultiple] to launch this mode and receive the
+  /// capture. Prefer the dedicated [DoclensMultiScreen] (or
+  /// [DoclensMultiScreen.scan]) to launch this mode and receive the
   /// collected `List<ScanResult>`.
   ///
   /// In this mode the live preview grows a thumbnail rail of captured
@@ -389,6 +391,18 @@ class DoclensScreen extends StatefulWidget {
   /// removed, or reordered), with an unmodifiable view of the current
   /// pages. Useful for syncing an external page count or thumbnail UI.
   final void Function(List<ScanResult> pages)? onPagesChanged;
+
+  /// Called when the user finishes a [multiPage] session (taps "Done"),
+  /// with the collected pages in order. The multi-page analogue of
+  /// [onCapture].
+  ///
+  /// - When `null` (default), the screen pops itself and the awaited
+  ///   `Future<List<ScanResult>?>` from [DoclensMultiScreen.scan] resolves
+  ///   with the pages — use this when you push the scanner as a route.
+  /// - When non-`null`, the screen calls your callback and does **not**
+  ///   auto-pop — use this when you mount the scanner directly as a widget
+  ///   (e.g. via [DoclensMultiScreen]) and drive navigation yourself.
+  final void Function(List<ScanResult> pages)? onComplete;
 
   /// Full [ScannerConfig] for fields not surfaced as top-level
   /// parameters: quad smoothing window, lifecycle pause/resume, debug
@@ -544,22 +558,137 @@ class DoclensScreen extends StatefulWidget {
     );
   }
 
-  /// Push the scanner in **multi-page** mode: the user captures any number
-  /// of pages without leaving the camera, manages them from a thumbnail
-  /// rail (reorder / delete), and taps "[doneLabel]" to finish.
+  @override
+  State<DoclensScreen> createState() => _DoclensScreenState();
+}
+
+/// Drop-in **multi-page** scanner — the batch sibling of [DoclensScreen].
+///
+/// Keeps the camera open across captures, collects pages with a thumbnail
+/// rail (reorder / delete from a built-in manager), and hands back the
+/// whole `List<ScanResult>`.
+///
+/// Two ways to use it, exactly mirroring [DoclensScreen]:
+///
+/// 1. **One line, as a route** — await the batch:
+/// ```dart
+/// final pages = await DoclensMultiScreen.scan(context);
+/// if (pages == null) return;          // user cancelled
+/// ```
+/// 2. **As a widget** — mount it directly and handle the result in
+///    [onComplete] (the batch analogue of [DoclensScreen.onCapture]):
+/// ```dart
+/// DoclensMultiScreen(
+///   onComplete: (pages) {
+///     // pages: List<ScanResult>, in order
+///   },
+/// )
+/// ```
+///
+/// Every knob from [DoclensScreen] (enhancement, auto-orientation, flash,
+/// overlay style, review builders via [config], …) carries over.
+class DoclensMultiScreen extends StatelessWidget {
+  const DoclensMultiScreen({
+    super.key,
+    this.onComplete,
+    this.maxPages,
+    this.onPagesChanged,
+    // behaviour
+    this.enableAutoCapture,
+    this.autoCaptureStabilityDuration,
+    this.autoCaptureConfirmationDelay,
+    this.autoCaptureCornerThreshold,
+    this.enablePerspectiveWarp,
+    this.jpegQuality,
+    this.imageEnhancement,
+    this.autoOrientation,
+    this.initialFlashMode,
+    this.initialLens,
+    this.enableTapToFocus,
+    this.enablePinchToZoom,
+    this.detectionThrottleHz,
+    // UI
+    this.accentColor,
+    this.warningColor,
+    this.overlayStyle,
+    this.backgroundColor = Colors.black,
+    this.appBarTitle = 'Preview',
+    this.captureHintText = 'Hold steady to capture',
+    this.retakeLabel = 'Retake',
+    this.editCornersLabel = 'Edit corners',
+    this.addPageLabel = 'Add',
+    this.doneLabel = 'Done',
+    this.discardPagesTitle = 'Discard scan?',
+    this.discardPagesMessage =
+        'You have unsaved pages. Discard them and close the scanner?',
+    this.showHint = true,
+    this.showCloseButton = true,
+    this.enableEditCorners = true,
+    this.errorBuilder,
+    this.config = const ScannerConfig(),
+  });
+
+  /// Called with the collected pages when the user taps "Done". When
+  /// non-`null` the screen does **not** pop itself — drive navigation
+  /// yourself. When `null`, mount this via [scan] (or push it as a route)
+  /// to receive the pages from the popped route instead.
+  final void Function(List<ScanResult> pages)? onComplete;
+
+  /// Cap on how many pages the batch may hold. `null` means unlimited.
+  final int? maxPages;
+
+  /// Called whenever the batch changes (add / remove / reorder).
+  final void Function(List<ScanResult> pages)? onPagesChanged;
+
+  final bool? enableAutoCapture;
+  final Duration? autoCaptureStabilityDuration;
+  final Duration? autoCaptureConfirmationDelay;
+  final double? autoCaptureCornerThreshold;
+  final bool? enablePerspectiveWarp;
+  final int? jpegQuality;
+  final ImageEnhancement? imageEnhancement;
+  final AutoOrientation? autoOrientation;
+  final FlashMode? initialFlashMode;
+  final CameraLens? initialLens;
+  final bool? enableTapToFocus;
+  final bool? enablePinchToZoom;
+  final int? detectionThrottleHz;
+  final Color? accentColor;
+  final Color? warningColor;
+  final QuadOverlayStyle? overlayStyle;
+  final Color backgroundColor;
+  final String appBarTitle;
+  final String captureHintText;
+  final String retakeLabel;
+  final String editCornersLabel;
+
+  /// Label of the review screen's accept button. Default `'Add'`.
+  final String addPageLabel;
+
+  /// Label of the "finish batch" button on the live preview. Default
+  /// `'Done'`.
+  final String doneLabel;
+
+  final String discardPagesTitle;
+  final String discardPagesMessage;
+  final bool showHint;
+  final bool showCloseButton;
+  final bool enableEditCorners;
+  final Widget Function(BuildContext context, String message)? errorBuilder;
+  final ScannerConfig config;
+
+  /// Push the multi-page scanner as a full-screen route and await the
+  /// captured pages — or `null` if the user cancels (back gesture / close
+  /// button) without keeping any.
   ///
-  /// Resolves with the captured pages in order, or `null` if the user
-  /// cancels (back gesture / close button) without keeping any.
+  /// The batch sibling of [DoclensScreen.scan].
   ///
   /// ```dart
-  /// final pages = await DoclensScreen.scanMultiple(context);
-  /// if (pages == null) return; // cancelled
+  /// final pages = await DoclensMultiScreen.scan(context);
+  /// if (pages == null) return;          // cancelled
   /// for (final page in pages) print(page.croppedImagePath);
   /// ```
-  ///
-  /// Every argument mirrors the matching field on [DoclensScreen]; see
-  /// those docs for details.
-  static Future<List<ScanResult>?> scanMultiple(
+  static Future<List<ScanResult>?> scan(
     BuildContext context, {
     int? maxPages,
     bool? enableAutoCapture,
@@ -598,13 +727,9 @@ class DoclensScreen extends StatefulWidget {
     return Navigator.of(context).push<List<ScanResult>>(
       MaterialPageRoute<List<ScanResult>>(
         fullscreenDialog: true,
-        builder: (_) => DoclensScreen(
-          multiPage: true,
+        // No onComplete: the screen pops this route with the pages.
+        builder: (_) => DoclensMultiScreen(
           maxPages: maxPages,
-          addPageLabel: addPageLabel,
-          doneLabel: doneLabel,
-          discardPagesTitle: discardPagesTitle,
-          discardPagesMessage: discardPagesMessage,
           onPagesChanged: onPagesChanged,
           enableAutoCapture: enableAutoCapture,
           autoCaptureStabilityDuration: autoCaptureStabilityDuration,
@@ -627,6 +752,10 @@ class DoclensScreen extends StatefulWidget {
           captureHintText: captureHintText,
           retakeLabel: retakeLabel,
           editCornersLabel: editCornersLabel,
+          addPageLabel: addPageLabel,
+          doneLabel: doneLabel,
+          discardPagesTitle: discardPagesTitle,
+          discardPagesMessage: discardPagesMessage,
           showHint: showHint,
           showCloseButton: showCloseButton,
           enableEditCorners: enableEditCorners,
@@ -638,7 +767,44 @@ class DoclensScreen extends StatefulWidget {
   }
 
   @override
-  State<DoclensScreen> createState() => _DoclensScreenState();
+  Widget build(BuildContext context) {
+    return DoclensScreen(
+      multiPage: true,
+      onComplete: onComplete,
+      maxPages: maxPages,
+      onPagesChanged: onPagesChanged,
+      enableAutoCapture: enableAutoCapture,
+      autoCaptureStabilityDuration: autoCaptureStabilityDuration,
+      autoCaptureConfirmationDelay: autoCaptureConfirmationDelay,
+      autoCaptureCornerThreshold: autoCaptureCornerThreshold,
+      enablePerspectiveWarp: enablePerspectiveWarp,
+      jpegQuality: jpegQuality,
+      imageEnhancement: imageEnhancement,
+      autoOrientation: autoOrientation,
+      initialFlashMode: initialFlashMode,
+      initialLens: initialLens,
+      enableTapToFocus: enableTapToFocus,
+      enablePinchToZoom: enablePinchToZoom,
+      detectionThrottleHz: detectionThrottleHz,
+      accentColor: accentColor,
+      warningColor: warningColor,
+      overlayStyle: overlayStyle,
+      backgroundColor: backgroundColor,
+      appBarTitle: appBarTitle,
+      captureHintText: captureHintText,
+      retakeLabel: retakeLabel,
+      editCornersLabel: editCornersLabel,
+      addPageLabel: addPageLabel,
+      doneLabel: doneLabel,
+      discardPagesTitle: discardPagesTitle,
+      discardPagesMessage: discardPagesMessage,
+      showHint: showHint,
+      showCloseButton: showCloseButton,
+      enableEditCorners: enableEditCorners,
+      errorBuilder: errorBuilder,
+      config: config,
+    );
+  }
 }
 
 class _DoclensScreenState extends State<DoclensScreen> {
@@ -794,7 +960,12 @@ class _DoclensScreenState extends State<DoclensScreen> {
   }
 
   void _finishMultiPage() {
-    Navigator.of(context).pop(List<ScanResult>.from(_pages));
+    final pages = List<ScanResult>.from(_pages);
+    if (widget.onComplete != null) {
+      widget.onComplete!(pages);
+    } else {
+      Navigator.of(context).pop(pages);
+    }
   }
 
   Future<void> _handleClose() async {
@@ -2309,7 +2480,7 @@ class _InstrumentErrorScreen extends StatelessWidget {
 
 // ---- multi-page gallery ----------------------------------------------
 
-/// Full-screen manager for a [DoclensScreen.scanMultiple] batch: reorder
+/// Full-screen manager for a [DoclensMultiScreen] batch: reorder
 /// pages by drag, delete them, and tap "done" to return to the camera.
 class _PagesGalleryScreen extends StatefulWidget {
   const _PagesGalleryScreen({
