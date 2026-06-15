@@ -30,6 +30,9 @@ The detected document outline — a 4-corner quad — is streamed to Dart on eve
   pipeline on Android. The 4-corner quad is streamed to Dart every frame.
 - **Three ways to scan** — a one-line drop-in screen, a fully branded
   custom UI on the package widget, or a hand-off to the OS-native scanner.
+- **Multi-page / batch scanning** — `DoclensScreen.scanMultiple(...)` keeps
+  the camera open, collects a stack of pages with a thumbnail rail, and
+  returns them in order; reorder and delete from a built-in page manager.
 - **Auto-capture with confirmation** — fires once the document is framed
   and held still, with a brief "hold still" window you can abort.
 - **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
@@ -72,7 +75,25 @@ final result = await DoclensScreen.scan(
 
 Every parameter has dartdoc explaining its default and when you'd want to change it.
 
-### 2. Custom UI: bring your own widgets
+**Multi-page / batch.** Call `DoclensScreen.scanMultiple(...)` to keep the
+camera open and collect a stack of pages in one session:
+
+```dart
+final List<ScanResult>? pages = await DoclensScreen.scanMultiple(context);
+if (pages == null) return;             // user cancelled
+for (final page in pages) {
+  print(page.croppedImagePath);
+}
+```
+
+The live preview grows a thumbnail rail and a **Done** button; the review
+screen's accept button reads **Add**. Tap the rail to open a page manager
+that **reorders** (drag) and **deletes** pages, and closing with
+uncommitted pages prompts a discard confirmation. Pass `maxPages` to cap
+the batch; every other `scan(...)` knob (enhancement, auto-orientation,
+overlay style, review builders, …) carries over.
+
+### 2. Custom UI — full control with `DoclensView`
 
 Want a scanner that matches your brand? Mount `DoclensView` yourself and supply builders for the overlay, shutter, and flash button. You own the result flow.
 
@@ -337,7 +358,9 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
 
 - **`DoclensScreen`** — drop-in scanner route. `DoclensScreen.scan(ctx)`
   pushes a full-screen route, awaits a `ScanResult?`, and pops itself
-  when the user accepts or cancels.
+  when the user accepts or cancels. `DoclensScreen.scanMultiple(ctx)`
+  runs the same screen in multi-page mode and awaits a
+  `List<ScanResult>?`.
 - **`DoclensController`** — owns a session. Streams: `quadStream`,
   `statusStream`, `autoCaptureStream`, `lowLightStream`,
   `previewSizeStream`. Methods: `initialize()`, `capture()`,
