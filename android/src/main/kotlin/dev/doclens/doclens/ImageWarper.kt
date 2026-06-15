@@ -19,7 +19,13 @@ import kotlin.math.roundToInt
  * lengths to preserve resolution without excessive memory use.
  */
 object ImageWarper {
-    fun warp(bitmap: Bitmap, quad: Quad, jpegQuality: Int, enhancement: String = "none"): String {
+    fun warp(
+        bitmap: Bitmap,
+        quad: Quad,
+        jpegQuality: Int,
+        enhancement: String = "none",
+        autoOrientation: String = "none",
+    ): String {
         val widthTop = hypot((quad.topRight.x - quad.topLeft.x).toDouble(),
                              (quad.topRight.y - quad.topLeft.y).toDouble())
         val widthBottom = hypot((quad.bottomRight.x - quad.bottomLeft.x).toDouble(),
@@ -57,19 +63,79 @@ object ImageWarper {
         // cropped pixels in place; `none` is a no-op.
         enhanceInPlace(out, enhancement)
 
+        // Optional upright-orientation correction. Detect the dominant text
+        // direction on the dewarped crop and rotate it so it reads upright;
+        // `0` turns (or no confident text) leaves it untouched.
+        var finalBmp = out
+        if (autoOrientation == "auto") {
+            val turns = TextOrientationDetector.bestClockwiseTurns(out)
+            if (turns != 0) {
+                val rot = rotateBitmap(out, turns)
+                if (rot !== out) {
+                    out.recycle()
+                    finalBmp = rot
+                }
+            }
+        }
+
         val tmp = File.createTempFile("fnds_cropped_", ".jpg")
         FileOutputStream(tmp).use { stream ->
-            out.compress(Bitmap.CompressFormat.JPEG, jpegQuality.coerceIn(1, 100), stream)
+            finalBmp.compress(Bitmap.CompressFormat.JPEG, jpegQuality.coerceIn(1, 100), stream)
         }
-        out.recycle()
+        finalBmp.recycle()
         return tmp.absolutePath
     }
 
-    fun warpFile(rawPath: String, quad: Quad, jpegQuality: Int, enhancement: String = "none"): String {
+    fun warpFile(
+        rawPath: String,
+        quad: Quad,
+        jpegQuality: Int,
+        enhancement: String = "none",
+        autoOrientation: String = "none",
+    ): String {
         val raw = BitmapFactory.decodeFile(rawPath)
             ?: throw ScannerException.CaptureFailed("Decode failed: $rawPath")
         val rotated = ExifRotator.rotated(raw, rawPath)
-        return warp(rotated, quad, jpegQuality, enhancement)
+        try {
+            return warp(rotated, quad, jpegQuality, enhancement, autoOrientation)
+        } finally {
+            if (rotated !== raw) rotated.recycle()
+            raw.recycle()
+        }
+    }
+
+    /**
+     * Rotate the JPEG at [rawPath] by [quarterTurns] clockwise 90° steps and
+     * write a new file, returning its path. EXIF orientation is baked in
+     * first so the rotation is applied to the visually-upright pixels.
+     * [quarterTurns] is normalized modulo 4.
+     */
+    fun rotateFile(rawPath: String, quarterTurns: Int, jpegQuality: Int): String {
+        val raw = BitmapFactory.decodeFile(rawPath)
+            ?: throw ScannerException.CaptureFailed("Decode failed: $rawPath")
+        val rotated = ExifRotator.rotated(raw, rawPath)
+        val out = rotateBitmap(rotated, quarterTurns)
+        val tmp = File.createTempFile("fnds_rotated_", ".jpg")
+        FileOutputStream(tmp).use { stream ->
+            out.compress(Bitmap.CompressFormat.JPEG, jpegQuality.coerceIn(1, 100), stream)
+        }
+        // `out`, `rotated` and `raw` may alias each other (no rotation / no
+        // EXIF). Recycle each distinct bitmap exactly once.
+        listOf(out, rotated, raw).distinct().forEach { it.recycle() }
+        return tmp.absolutePath
+    }
+
+    /**
+     * Return a new bitmap rotated [clockwiseQuarterTurns] 90° steps clockwise,
+     * or the input itself when the normalized turn count is 0. `Matrix.postRotate`
+     * with positive degrees rotates clockwise (matching `ExifRotator`).
+     */
+    fun rotateBitmap(src: Bitmap, clockwiseQuarterTurns: Int): Bitmap {
+        val t = ((clockwiseQuarterTurns % 4) + 4) % 4
+        if (t == 0) return src
+        val matrix = Matrix()
+        matrix.postRotate(90f * t)
+        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
     }
 
     /**

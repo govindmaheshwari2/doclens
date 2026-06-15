@@ -7,6 +7,7 @@ struct ScannerConfig {
     let enablePerspectiveWarp: Bool
     let jpegQuality: Int
     let imageEnhancement: String
+    let autoOrientation: String
     let outputFormat: String
     let captureResolution: String
     let initialFlashMode: String
@@ -22,6 +23,7 @@ struct ScannerConfig {
             enablePerspectiveWarp: map["enablePerspectiveWarp"] as? Bool ?? true,
             jpegQuality: map["jpegQuality"] as? Int ?? 100,
             imageEnhancement: map["imageEnhancement"] as? String ?? "none",
+            autoOrientation: map["autoOrientation"] as? String ?? "none",
             outputFormat: map["outputFormat"] as? String ?? "jpeg",
             captureResolution: map["captureResolution"] as? String ?? "high",
             initialFlashMode: map["initialFlashMode"] as? String ?? "auto",

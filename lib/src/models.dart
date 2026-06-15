@@ -83,6 +83,35 @@ enum ImageEnhancement {
 /// Capture resolution hint. The native side picks the closest supported preset.
 enum Resolution { auto, high, max }
 
+/// Automatic upright-orientation correction for the cropped document.
+///
+/// A capture only ever knows the document's *in-frame* orientation — if the
+/// page (or its text) was sideways or upside-down when shot, the dewarped
+/// crop comes out sideways or upside-down too. [auto] detects the dominant
+/// text direction on-device and rotates the crop in 90° steps so the text
+/// reads upright.
+///
+/// Detection uses the OS text APIs already present on each platform — Apple
+/// Vision (`VNRecognizeTextRequest`) on iOS and Play-services ML Kit text
+/// recognition on Android — so **no model is bundled** (the Android model is
+/// delivered on demand by Google Play services, exactly like the OS-native
+/// scanner). When no text is found, the page is blank/graphical, or the API is
+/// unavailable, the crop is left exactly as warped.
+///
+/// Like [ImageEnhancement], orientation correction runs on the
+/// perspective-corrected crop only — the raw image ([ScanResult.rawImagePath])
+/// is never rotated — and applies to both the capture's cropped output and
+/// re-warps performed via `EditCornersScreen`.
+enum AutoOrientation {
+  /// Leave the crop exactly as warped (its in-frame orientation). Default.
+  none,
+
+  /// Detect the dominant text direction and rotate the crop to the nearest
+  /// 90° so text reads upright. Falls back to [none] when no confident text
+  /// orientation can be found.
+  auto,
+}
+
 /// Output of a single capture.
 class ScanResult {
   const ScanResult({
@@ -153,6 +182,7 @@ class ScannerConfig {
     this.enablePerspectiveWarp = true,
     this.jpegQuality = 100,
     this.imageEnhancement = ImageEnhancement.none,
+    this.autoOrientation = AutoOrientation.none,
     this.outputFormat = ImageFormat.jpeg,
     this.captureResolution = Resolution.high,
     // Camera
@@ -238,6 +268,14 @@ class ScannerConfig {
   /// `EditCornersScreen`. The raw image is never enhanced.
   final ImageEnhancement imageEnhancement;
 
+  /// Automatic upright-orientation correction for the cropped document.
+  /// Defaults to [AutoOrientation.none] (the crop keeps its in-frame
+  /// orientation). Set to [AutoOrientation.auto] to detect the document's
+  /// text direction on-device and rotate the crop in 90° steps so it reads
+  /// upright. Applies to the capture's cropped output and to re-warps via
+  /// `EditCornersScreen`; the raw image is never rotated.
+  final AutoOrientation autoOrientation;
+
   /// Output container format for captures. JPEG is the only fully
   /// supported value today; PNG is reserved for a future release.
   final ImageFormat outputFormat;
@@ -316,6 +354,7 @@ class ScannerConfig {
         'enablePerspectiveWarp': enablePerspectiveWarp,
         'jpegQuality': jpegQuality,
         'imageEnhancement': imageEnhancement.name,
+        'autoOrientation': autoOrientation.name,
         'outputFormat': outputFormat.name,
         'captureResolution': captureResolution.name,
         'initialFlashMode': initialFlashMode.name,

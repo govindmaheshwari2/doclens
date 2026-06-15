@@ -227,6 +227,43 @@ It's a knob on `ScannerConfig` too, so it works from every entry point.
 > (`scanWithNativeUI`) apply Apple's / Google's own document cleanup — at the
 > cost of using their full-screen UI instead of this package's custom flow.
 
+## Auto-orientation & rotate
+
+A capture only knows a document's *in-frame* orientation — shoot a page
+sideways or upside-down and the dewarped crop comes out the same way. Set
+`autoOrientation` to detect the page's text direction on-device and rotate the
+crop in 90° steps so it reads upright:
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  autoOrientation: AutoOrientation.auto,
+);
+```
+
+| Mode | Effect |
+| --- | --- |
+| `none` (default) | Keep the crop's in-frame orientation |
+| `auto` | Detect the dominant text direction and rotate the crop upright |
+
+Detection reuses the OS text APIs already on each platform — Apple Vision's
+`VNRecognizeTextRequest` on iOS and Play-services ML Kit text recognition on
+Android — so **no model is bundled** (the Android model is delivered on demand
+by Google Play services, exactly like `scanWithNativeUI`). The crop is read at
+each of the four 90° rotations and turned to whichever reads as the most
+confident text; a blank or purely graphical page (no confident text) is left
+untouched. Like enhancement, it runs on the cropped output only — the raw image
+is never rotated — and travels on `ScannerConfig`, so it applies to captures
+and to re-warps via `EditCornersScreen`.
+
+For a **manual** rotate control (e.g. a button in your review UI), call the
+controller directly — `quarterTurns` is clockwise and normalized modulo 4, so
+`-1` and `3` both turn one step the respective way:
+
+```dart
+final rotatedPath = await controller.rotateImage(scan.croppedImagePath!, 1);
+```
+
 ## Platform setup
 
 ### iOS
@@ -267,8 +304,8 @@ on demand by Google Play services. Gracefully fails with
 - **`DoclensController`** — owns a session. Streams: `quadStream`,
   `statusStream`, `autoCaptureStream`, `lowLightStream`,
   `previewSizeStream`. Methods: `initialize()`, `capture()`,
-  `warpImage()`, `focusAt()`, `setFlashMode()`, `cycleFlashMode()`,
-  `switchCamera()`, `pause()`, `resume()`, `dispose()`.
+  `warpImage()`, `rotateImage()`, `focusAt()`, `setFlashMode()`,
+  `cycleFlashMode()`, `switchCamera()`, `pause()`, `resume()`, `dispose()`.
 - **`DoclensView`** — Flutter widget rendering preview + your overlays.
   Builder slots: `overlayBuilder`, `captureButtonBuilder`,
   `flashButtonBuilder`, `lowLightHintBuilder`, `debugOverlayBuilder`.
@@ -284,8 +321,8 @@ on demand by Google Play services. Gracefully fails with
   native-modal scan, returns `List<String>?`.
 - **`ScannerConfig`** — every feature flag with a sensible default
   (auto-capture timing, smoothing window, detection throttle, JPEG
-  quality, flash, lens, lifecycle, telemetry, tap-to-focus,
-  pinch-to-zoom).
+  quality, image enhancement, auto-orientation, flash, lens, lifecycle,
+  telemetry, tap-to-focus, pinch-to-zoom).
 - **`Quad`** — 4-point TL/TR/BR/BL with `area`, `centroid`, `contains`,
   `interpolate`, `maxCornerDistance`, `scaleToSize`.
 - **`ScanResult`** — `croppedImagePath`, `rawImagePath`, `detectedQuad`,

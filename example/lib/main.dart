@@ -128,8 +128,12 @@ class ShowroomHome extends StatelessWidget {
         onTap: (ctx) async {
           final mode = await _pickEnhancement(ctx);
           if (mode == null || !ctx.mounted) return;
-          final result =
-              await DoclensScreen.scan(ctx, imageEnhancement: mode);
+          final result = await DoclensScreen.scan(
+            ctx,
+            imageEnhancement: mode,
+            // Detect the page's text direction and straighten the crop upright.
+            autoOrientation: AutoOrientation.auto,
+          );
           if (result == null || !ctx.mounted) return;
           await Navigator.of(ctx).push<void>(
             MaterialPageRoute(
@@ -1077,14 +1081,43 @@ class _EnhancementOptionTile extends StatelessWidget {
 //  Returned-result preview (drop-in entry)
 // =====================================================================
 
-class _ReturnedResult extends StatelessWidget {
+class _ReturnedResult extends StatefulWidget {
   const _ReturnedResult({required this.result, this.enhancement});
   final ScanResult result;
   final ImageEnhancement? enhancement;
 
   @override
+  State<_ReturnedResult> createState() => _ReturnedResultState();
+}
+
+class _ReturnedResultState extends State<_ReturnedResult> {
+  late String _path =
+      widget.result.croppedImagePath ?? widget.result.rawImagePath;
+  bool _rotating = false;
+
+  ScanResult get result => widget.result;
+  ImageEnhancement? get enhancement => widget.enhancement;
+
+  /// Manual rotate — a pure file op via the platform instance, so it needs no
+  /// camera session or controller. `evict` clears the old file from Flutter's
+  /// image cache so the rotated bytes actually show.
+  Future<void> _rotate(int quarterTurns) async {
+    if (_rotating) return;
+    setState(() => _rotating = true);
+    try {
+      final out = await DoclensPlatform.instance
+          .rotateImage(imagePath: _path, quarterTurns: quarterTurns);
+      await FileImage(File(out)).evict();
+      if (!mounted) return;
+      setState(() => _path = out);
+    } finally {
+      if (mounted) setState(() => _rotating = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final path = result.croppedImagePath ?? result.rawImagePath;
+    final path = _path;
     return Scaffold(
       backgroundColor: _kPaper,
       body: SafeArea(
@@ -1130,6 +1163,17 @@ class _ReturnedResult extends StatelessWidget {
                         ),
                       ],
                     ),
+                  ),
+                  _RotateButton(
+                    icon: Icons.rotate_left,
+                    enabled: !_rotating,
+                    onTap: () => _rotate(-1),
+                  ),
+                  const SizedBox(width: 8),
+                  _RotateButton(
+                    icon: Icons.rotate_right,
+                    enabled: !_rotating,
+                    onTap: () => _rotate(1),
                   ),
                 ],
               ),
@@ -1212,6 +1256,38 @@ class _ReturnedResult extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RotateButton extends StatelessWidget {
+  const _RotateButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        height: 36,
+        width: 36,
+        decoration: BoxDecoration(
+          color: _kPaperHi,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: _kRule),
+        ),
+        child: Icon(
+          icon,
+          color: enabled ? _kInk : _kInkDim,
+          size: 18,
+        ),
       ),
     );
   }

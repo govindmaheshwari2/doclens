@@ -524,7 +524,8 @@ extension ScannerSession: AVCapturePhotoCaptureDelegate {
                     cgImage: cgImage,
                     quad: q,
                     jpegQuality: config.jpegQuality,
-                    enhancement: config.imageEnhancement)
+                    enhancement: config.imageEnhancement,
+                    autoOrientation: config.autoOrientation)
             } catch {
                 // Don't fail the whole capture — surface the warp error
                 // so callers can decide to retake, but still give them the

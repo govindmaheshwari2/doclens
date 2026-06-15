@@ -89,6 +89,7 @@ class DoclensPlugin :
                 s.capture(result)
             }
             "warpImage" -> handleWarp(call, result)
+            "rotateImage" -> handleRotate(call, result)
             "setFlashMode" -> { session?.setFlashMode(call.argument<String>("mode") ?: "auto"); result.success(null) }
             "switchCamera" -> { session?.switchCamera(); result.success(null) }
             "pause" -> { session?.pause(); result.success(null) }
@@ -124,13 +125,31 @@ class DoclensPlugin :
         val quadMap = call.argument<Map<String, Any?>>("quad")
         val quality = call.argument<Int>("jpegQuality") ?: 100
         val enhancement = call.argument<String>("enhancement") ?: "none"
+        val autoOrientation = call.argument<String>("autoOrientation") ?: "none"
         if (rawPath == null || quadMap == null) {
             result.error("capture_failed", "Invalid warp args", null); return
         }
         backgroundExecutor.execute {
             try {
                 val q = Quad.fromMap(quadMap)
-                val out = ImageWarper.warpFile(rawPath, q, quality, enhancement)
+                val out = ImageWarper.warpFile(rawPath, q, quality, enhancement, autoOrientation)
+                mainHandler.post { result.success(out) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("capture_failed", e.message, null) }
+            }
+        }
+    }
+
+    private fun handleRotate(call: MethodCall, result: MethodChannel.Result) {
+        val path = call.argument<String>("imagePath")
+        val quarterTurns = call.argument<Int>("quarterTurns") ?: 0
+        val quality = call.argument<Int>("jpegQuality") ?: 100
+        if (path == null) {
+            result.error("capture_failed", "Invalid rotate args", null); return
+        }
+        backgroundExecutor.execute {
+            try {
+                val out = ImageWarper.rotateFile(path, quarterTurns, quality)
                 mainHandler.post { result.success(out) }
             } catch (e: Exception) {
                 mainHandler.post { result.error("capture_failed", e.message, null) }
