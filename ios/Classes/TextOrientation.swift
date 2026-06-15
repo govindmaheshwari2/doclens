@@ -1,4 +1,5 @@
 import CoreGraphics
+import ImageIO
 import Vision
 
 /// Detects the dominant text direction of a (already dewarped) document crop
