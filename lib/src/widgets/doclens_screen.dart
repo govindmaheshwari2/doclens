@@ -95,6 +95,7 @@ class DoclensScreen extends StatefulWidget {
     this.enablePerspectiveWarp,
     this.jpegQuality,
     this.imageEnhancement,
+    this.autoOrientation,
     this.initialFlashMode,
     this.initialLens,
     this.enableTapToFocus,
@@ -198,6 +199,17 @@ class DoclensScreen extends StatefulWidget {
   /// When `null` (default), inherits from [config] /
   /// [ScannerConfig.imageEnhancement].
   final ImageEnhancement? imageEnhancement;
+
+  /// Automatic upright-orientation correction for the cropped document.
+  ///
+  /// - [AutoOrientation.none] (default) — keep the crop's in-frame orientation.
+  /// - [AutoOrientation.auto] — detect the document's text direction
+  ///   on-device and rotate the crop in 90° steps so it reads upright.
+  ///
+  /// Only the cropped output is affected; the raw image is left untouched.
+  /// When `null` (default), inherits from [config] /
+  /// [ScannerConfig.autoOrientation].
+  final AutoOrientation? autoOrientation;
 
   /// Flash mode the camera should start in.
   ///
@@ -401,6 +413,7 @@ class DoclensScreen extends StatefulWidget {
     bool? enablePerspectiveWarp,
     int? jpegQuality,
     ImageEnhancement? imageEnhancement,
+    AutoOrientation? autoOrientation,
     FlashMode? initialFlashMode,
     CameraLens? initialLens,
     bool? enableTapToFocus,
@@ -437,6 +450,7 @@ class DoclensScreen extends StatefulWidget {
           enablePerspectiveWarp: enablePerspectiveWarp,
           jpegQuality: jpegQuality,
           imageEnhancement: imageEnhancement,
+          autoOrientation: autoOrientation,
           initialFlashMode: initialFlashMode,
           initialLens: initialLens,
           enableTapToFocus: enableTapToFocus,
@@ -506,6 +520,7 @@ class _DoclensScreenState extends State<DoclensScreen> {
           widget.enablePerspectiveWarp ?? c.enablePerspectiveWarp,
       jpegQuality: widget.jpegQuality ?? c.jpegQuality,
       imageEnhancement: widget.imageEnhancement ?? c.imageEnhancement,
+      autoOrientation: widget.autoOrientation ?? c.autoOrientation,
       outputFormat: c.outputFormat,
       captureResolution: c.captureResolution,
       // camera

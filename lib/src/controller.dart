@@ -268,6 +268,10 @@ class DoclensController extends ChangeNotifier {
   }
 
   /// Re-warp [rawImagePath] using a user-edited [quad]. Used by EditCornersScreen.
+  ///
+  /// Applies the session's [ScannerConfig.imageEnhancement] and
+  /// [ScannerConfig.autoOrientation] to the result, so a re-warp matches the
+  /// original capture's processing.
   Future<String> warpImage(String rawImagePath, Quad quad) {
     _ensureReady();
     return DoclensPlatform.instance.warpImage(
@@ -275,6 +279,29 @@ class DoclensController extends ChangeNotifier {
       quad: quad,
       jpegQuality: _config.jpegQuality,
       enhancement: _config.imageEnhancement,
+      autoOrientation: _config.autoOrientation,
+    );
+  }
+
+  /// Rotate the image at [imagePath] by [quarterTurns] clockwise 90° steps,
+  /// writing a new file and returning its path. The source file is left
+  /// untouched.
+  ///
+  /// Use this to expose a manual "rotate" control in your review UI (or to
+  /// correct a capture when [ScannerConfig.autoOrientation] is
+  /// [AutoOrientation.none]). [quarterTurns] is normalized modulo 4, so
+  /// `-1` (one turn counter-clockwise) and `5` (one turn clockwise) are both
+  /// valid; `0` simply re-encodes a copy.
+  ///
+  /// Pure file operation — needs no camera, so it works whether or not
+  /// [initialize] has been called. (You can also call
+  /// `DoclensPlatform.instance.rotateImage(...)` directly without a
+  /// controller.)
+  Future<String> rotateImage(String imagePath, int quarterTurns) {
+    _ensureNotDisposed();
+    return DoclensPlatform.instance.rotateImage(
+      imagePath: imagePath,
+      quarterTurns: quarterTurns,
     );
   }
 

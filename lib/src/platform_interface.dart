@@ -46,6 +46,16 @@ abstract class DoclensPlatform extends PlatformInterface {
     required Quad quad,
     int jpegQuality = 100,
     ImageEnhancement enhancement = ImageEnhancement.none,
+    AutoOrientation autoOrientation = AutoOrientation.none,
+  });
+
+  /// Rotate the JPEG at [imagePath] by [quarterTurns] clockwise 90° steps and
+  /// write a new file, returning its path. The original file is left
+  /// untouched. [quarterTurns] is normalized modulo 4, so negative
+  /// (counter-clockwise) and large values are accepted; `0` is a no-op copy.
+  Future<String> rotateImage({
+    required String imagePath,
+    required int quarterTurns,
   });
 
   Future<void> setFlashMode(FlashMode mode);

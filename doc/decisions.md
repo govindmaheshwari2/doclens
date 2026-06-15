@@ -174,3 +174,41 @@ References:
 - [`AVCaptureDevice.focusPointOfInterest`](https://developer.apple.com/documentation/avfoundation/avcapturedevice/1385853-focuspointofinterest)
 - [`SurfaceOrientedMeteringPointFactory`](https://developer.android.com/reference/androidx/camera/core/SurfaceOrientedMeteringPointFactory)
 - [`CameraControl.startFocusAndMetering`](https://developer.android.com/reference/androidx/camera/core/CameraControl#startFocusAndMetering(androidx.camera.core.FocusMeteringAction))
+
+## Auto-orientation: text scoring across four rotations, no bundled model
+
+`AutoOrientation.auto` straightens a captured page upright. The dewarp
+preserves the document's *in-frame* orientation, so a page shot sideways
+or upside-down stays that way — geometry alone can't tell upright from
+upside-down, only the text can.
+
+We deliberately avoid bundling an orientation model. Instead we reuse the
+text recognizer each platform already ships: Apple Vision's
+`VNRecognizeTextRequest` on iOS (part of the OS) and Play-services ML Kit
+Latin text recognition on Android (downloaded on demand, exactly like the
+`scanWithNativeUI` document scanner). The crop is read at each of the four
+90° rotations and we keep the one whose recognised text is most plentiful
+and confident; a near-blank page (no confident text) scores below a small
+floor and is left untouched.
+
+Both platforms converge on a single **clockwise quarter-turn** convention:
+detection reports how many clockwise 90° turns make the text upright, and
+that same rotation is baked into the output. On Android this matches
+`InputImage.fromBitmap(bitmap, rotationDegrees)` / CameraX, where
+`rotationDegrees` is the clockwise rotation that brings the buffer upright.
+On iOS the Vision orientation hint (`.up/.right/.down/.left` =
+`0/90/180/270°` clockwise per the EXIF orientation constants) is mapped to
+the same turn count. The public `rotateImage(path, quarterTurns)` (manual
+rotate) uses the identical convention — positive is clockwise — so
+`Matrix.postRotate(90·t)` on Android and a clockwise
+`UIGraphicsImageRenderer` rotation on iOS produce matching results.
+
+Detection runs once per capture on a downscaled copy with the *fast*
+recognition level, off the main thread (the warp already runs on a
+background queue), so the four passes are cheap.
+
+References:
+- [`VNRecognizeTextRequest`](https://developer.apple.com/documentation/vision/vnrecognizetextrequest)
+- [`CGImagePropertyOrientation`](https://developer.apple.com/documentation/imageio/cgimagepropertyorientation)
+- [ML Kit text recognition v2 (Android)](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
+- [`InputImage.fromBitmap`](https://developers.google.com/android/reference/com/google/mlkit/vision/common/InputImage#fromBitmap(android.graphics.Bitmap,%20int))

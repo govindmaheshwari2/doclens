@@ -11,6 +11,26 @@ Sobel + connected-components + convex-hull pipeline. The detected
 4-corner quad is streamed to Dart every frame. The preview is a Flutter
 `Texture`. Every overlay, button, and label is a widget you build.
 
+## Features
+
+- **Native edge detection** — Apple Vision on iOS, a pure-Kotlin CameraX
+  pipeline on Android. The 4-corner quad is streamed to Dart every frame.
+- **Three ways to scan** — a one-line drop-in screen, a fully branded
+  custom UI on the package widget, or a hand-off to the OS-native scanner.
+- **Auto-capture with confirmation** — fires once the document is framed
+  and held still, with a brief "hold still" window you can abort.
+- **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
+  modes, and camera switch.
+- **Perspective-correct crop** — the detected quad is dewarped to a clean,
+  flat document image.
+- **Image enhancement & shadow removal** — grayscale, shadow-corrected
+  colour ("magic colour"), and near-bitonal black-and-white for OCR. Runs
+  on-device with no bundled model and no extra dependency.
+- **Auto-orientation & rotate** — straighten the crop upright from its
+  detected text direction, plus a manual `rotateImage` API.
+- **Edit corners after capture** — drag-the-corners helper with re-warp on
+  save; every handle and button is overridable.
+
 ## Three ways to scan
 
 ### 1. Drop-in — one line of code
@@ -227,6 +247,43 @@ It's a knob on `ScannerConfig` too, so it works from every entry point.
 > (`scanWithNativeUI`) apply Apple's / Google's own document cleanup — at the
 > cost of using their full-screen UI instead of this package's custom flow.
 
+## Auto-orientation & rotate
+
+A capture only knows a document's *in-frame* orientation — shoot a page
+sideways or upside-down and the dewarped crop comes out the same way. Set
+`autoOrientation` to detect the page's text direction on-device and rotate the
+crop in 90° steps so it reads upright:
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  autoOrientation: AutoOrientation.auto,
+);
+```
+
+| Mode | Effect |
+| --- | --- |
+| `none` (default) | Keep the crop's in-frame orientation |
+| `auto` | Detect the dominant text direction and rotate the crop upright |
+
+Detection reuses the OS text APIs already on each platform — Apple Vision's
+`VNRecognizeTextRequest` on iOS and Play-services ML Kit text recognition on
+Android — so **no model is bundled** (the Android model is delivered on demand
+by Google Play services, exactly like `scanWithNativeUI`). The crop is read at
+each of the four 90° rotations and turned to whichever reads as the most
+confident text; a blank or purely graphical page (no confident text) is left
+untouched. Like enhancement, it runs on the cropped output only — the raw image
+is never rotated — and travels on `ScannerConfig`, so it applies to captures
+and to re-warps via `EditCornersScreen`.
+
+For a **manual** rotate control (e.g. a button in your review UI), call the
+controller directly — `quarterTurns` is clockwise and normalized modulo 4, so
+`-1` and `3` both turn one step the respective way:
+
+```dart
+final rotatedPath = await controller.rotateImage(scan.croppedImagePath!, 1);
+```
+
 ## Platform setup
 
 ### iOS
@@ -267,8 +324,8 @@ on demand by Google Play services. Gracefully fails with
 - **`DoclensController`** — owns a session. Streams: `quadStream`,
   `statusStream`, `autoCaptureStream`, `lowLightStream`,
   `previewSizeStream`. Methods: `initialize()`, `capture()`,
-  `warpImage()`, `focusAt()`, `setFlashMode()`, `cycleFlashMode()`,
-  `switchCamera()`, `pause()`, `resume()`, `dispose()`.
+  `warpImage()`, `rotateImage()`, `focusAt()`, `setFlashMode()`,
+  `cycleFlashMode()`, `switchCamera()`, `pause()`, `resume()`, `dispose()`.
 - **`DoclensView`** — Flutter widget rendering preview + your overlays.
   Builder slots: `overlayBuilder`, `captureButtonBuilder`,
   `flashButtonBuilder`, `lowLightHintBuilder`, `debugOverlayBuilder`.
@@ -284,8 +341,8 @@ on demand by Google Play services. Gracefully fails with
   native-modal scan, returns `List<String>?`.
 - **`ScannerConfig`** — every feature flag with a sensible default
   (auto-capture timing, smoothing window, detection throttle, JPEG
-  quality, flash, lens, lifecycle, telemetry, tap-to-focus,
-  pinch-to-zoom).
+  quality, image enhancement, auto-orientation, flash, lens, lifecycle,
+  telemetry, tap-to-focus, pinch-to-zoom).
 - **`Quad`** — 4-point TL/TR/BR/BL with `area`, `centroid`, `contains`,
   `interpolate`, `maxCornerDistance`, `scaleToSize`.
 - **`ScanResult`** — `croppedImagePath`, `rawImagePath`, `detectedQuad`,
@@ -301,8 +358,8 @@ on demand by Google Play services. Gracefully fails with
 ## What this package deliberately does NOT do
 
 - OCR — returns image paths only; pair with a text-recognition library.
+  (`AutoOrientation.auto` reads text to find "upright" but never returns it.)
 - Multi-page PDF export — returns image paths; assemble a PDF yourself.
-- B&W / grayscale / colour filters.
 - Web or desktop targets.
 
 ## Documentation

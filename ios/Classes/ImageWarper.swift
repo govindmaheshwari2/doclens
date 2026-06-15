@@ -21,7 +21,8 @@ enum ImageWarper {
     /// the image's own pixel coordinates (origin top-left, y-down).
     /// CoreImage uses bottom-left origin, so we flip Y before calling.
     static func warp(cgImage: CGImage, quad: Quad, jpegQuality: Int,
-                     enhancement: String = "none") throws -> String {
+                     enhancement: String = "none",
+                     autoOrientation: String = "none") throws -> String {
         let ci = CIImage(cgImage: cgImage)
         let w = ci.extent.width
         let h = ci.extent.height
@@ -78,7 +79,17 @@ enum ImageWarper {
         guard let cg = ciContext.createCGImage(enhanced, from: extent) else {
             throw ImageWarperError.warpFailed("CGImage render failed (extent=\(extent))")
         }
-        let img = UIImage(cgImage: cg)
+        // Optional upright-orientation correction. Detect the dominant text
+        // direction on the dewarped crop and rotate it so it reads upright.
+        // A failure to detect leaves the crop as-is (0 turns).
+        var oriented = cg
+        if autoOrientation == "auto" {
+            let turns = TextOrientation.bestClockwiseTurns(for: cg)
+            if turns != 0, let rotated = rotate(cgImage: cg, clockwiseQuarterTurns: turns) {
+                oriented = rotated
+            }
+        }
+        let img = UIImage(cgImage: oriented)
         let q = max(1, min(100, jpegQuality))
         guard let data = img.jpegData(compressionQuality: CGFloat(q) / 100.0) else {
             throw ImageWarperError.warpFailed("JPEG encode failed")
@@ -197,13 +208,59 @@ enum ImageWarper {
 
     /// Read an image from disk, warp it, write a new file. Used by warpImage().
     static func warpFile(inputPath: String, quad: Quad, jpegQuality: Int,
-                         enhancement: String = "none") throws -> String {
+                         enhancement: String = "none",
+                         autoOrientation: String = "none") throws -> String {
         guard let img = UIImage(contentsOfFile: inputPath),
               let cg = img.uprightCGImage() else {
             throw ImageWarperError.ioError("Cannot read image at \(inputPath)")
         }
         return try warp(cgImage: cg, quad: quad, jpegQuality: jpegQuality,
-                        enhancement: enhancement)
+                        enhancement: enhancement, autoOrientation: autoOrientation)
+    }
+
+    /// Read an image from disk, rotate it by [quarterTurns] clockwise 90°
+    /// steps, write a new file. Used by rotateImage(). [quarterTurns] is
+    /// normalized modulo 4.
+    static func rotateFile(inputPath: String, quarterTurns: Int,
+                           jpegQuality: Int) throws -> String {
+        guard let img = UIImage(contentsOfFile: inputPath),
+              let cg = img.uprightCGImage() else {
+            throw ImageWarperError.ioError("Cannot read image at \(inputPath)")
+        }
+        let turns = ((quarterTurns % 4) + 4) % 4
+        let outCg = turns == 0 ? cg : (rotate(cgImage: cg, clockwiseQuarterTurns: turns) ?? cg)
+        let q = max(1, min(100, jpegQuality))
+        guard let data = UIImage(cgImage: outCg).jpegData(compressionQuality: CGFloat(q) / 100.0) else {
+            throw ImageWarperError.warpFailed("JPEG encode failed")
+        }
+        return try TempFiles.write(jpegData: data, quality: q)
+    }
+
+    /// Rotate a `CGImage` by [clockwiseQuarterTurns] 90° steps. Rendered
+    /// through `UIGraphicsImageRenderer`, whose coordinate system is
+    /// top-left-origin / y-down — so a positive rotation angle is clockwise,
+    /// matching the public "quarter turns clockwise" contract.
+    static func rotate(cgImage cg: CGImage, clockwiseQuarterTurns turns: Int) -> CGImage? {
+        let t = ((turns % 4) + 4) % 4
+        if t == 0 { return cg }
+        let src = UIImage(cgImage: cg)
+        let radians = CGFloat(t) * .pi / 2
+        let swap = (t == 1 || t == 3)
+        let outSize = swap
+            ? CGSize(width: src.size.height, height: src.size.width)
+            : src.size
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1.0
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: outSize, format: format)
+        let rendered = renderer.image { context in
+            let ctx = context.cgContext
+            ctx.translateBy(x: outSize.width / 2, y: outSize.height / 2)
+            ctx.rotate(by: radians)
+            src.draw(in: CGRect(x: -src.size.width / 2, y: -src.size.height / 2,
+                                width: src.size.width, height: src.size.height))
+        }
+        return rendered.cgImage
     }
 }
 
