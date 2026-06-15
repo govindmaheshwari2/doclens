@@ -11,29 +11,6 @@ Sobel + connected-components + convex-hull pipeline. The detected
 4-corner quad is streamed to Dart every frame. The preview is a Flutter
 `Texture`. Every overlay, button, and label is a widget you build.
 
-## Features
-
-- **Native edge detection** — Apple Vision on iOS, a pure-Kotlin CameraX
-  pipeline on Android. The 4-corner quad is streamed to Dart every frame.
-- **Three ways to scan** — a one-line drop-in screen, a fully branded
-  custom UI on the package widget, or a hand-off to the OS-native scanner.
-- **Multi-page / batch scanning** — `DoclensMultiScreen` keeps the camera
-  open, collects a stack of pages with a thumbnail rail, and returns them
-  in order; reorder and delete from a built-in page manager.
-- **Auto-capture with confirmation** — fires once the document is framed
-  and held still, with a brief "hold still" window you can abort.
-- **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
-  modes, and camera switch.
-- **Perspective-correct crop** — the detected quad is dewarped to a clean,
-  flat document image.
-- **Image enhancement & shadow removal** — grayscale, shadow-corrected
-  colour ("magic colour"), and near-bitonal black-and-white for OCR. Runs
-  on-device with no bundled model and no extra dependency.
-- **Auto-orientation & rotate** — straighten the crop upright from its
-  detected text direction, plus a manual `rotateImage` API.
-- **Edit corners after capture** — drag-the-corners helper with re-warp on
-  save; every handle and button is overridable.
-
 ## Three ways to scan
 
 ### 1. Drop-in — one line of code
@@ -60,8 +37,7 @@ final result = await DoclensScreen.scan(
 );
 ```
 
-Every `DoclensScreen` parameter has rich dartdoc explaining the default,
-the trade-off, and when to override.
+Every parameter has dartdoc explaining its default and when you'd want to change it.
 
 **Multi-page / batch.** `DoclensMultiScreen` is the batch sibling of
 `DoclensScreen` — keep the camera open and collect a stack of pages in one
@@ -76,12 +52,26 @@ for (final page in pages) {
 ```
 
 …or mount it directly as a widget and handle the result yourself via
-`onComplete` (the batch analogue of `DoclensScreen.onCapture`):
+`onComplete` (the batch analogue of `DoclensScreen.onCapture`). Unlike the
+single-page widget, `DoclensMultiScreen` is self-contained — no
+`DoclensController` to wire up:
 
 ```dart
 DoclensMultiScreen(
+  maxPages: 20,                    // null = unlimited
+  imageEnhancement: ImageEnhancement.enhanced,
+  autoOrientation: AutoOrientation.auto,
+  onPagesChanged: (pages) {
+    // fires on every add / remove / reorder — update a counter, etc.
+  },
   onComplete: (pages) {
-    // pages: List<ScanResult>, in order
+    // pages: List<ScanResult>, in order, when the user taps "Done"
+    for (final page in pages) {
+      // page.croppedImagePath  — perspective-warped JPEG
+      // page.detectedQuad      — Quad in raw image pixel coords
+      // page.warpError         — non-null if the warp failed
+    }
+    Navigator.of(context).pop();   // with onComplete set, you drive navigation
   },
 )
 ```
@@ -253,12 +243,12 @@ final result = await DoclensScreen.scan(
 );
 ```
 
-| Mode | Effect | Good for |
-| --- | --- | --- |
-| `none` (default) | Pure dewarp, unmodified pixels | Archival, your own preprocessing |
-| `grayscale` | Plain desaturate (no shadow handling) | Neutral look, smaller files |
-| `enhanced` | **Shadow removal** + background whitening, colour kept ("magic colour") | Photos in uneven light |
-| `blackAndWhite` | **Shadow removal** + adaptive/Otsu threshold, near-bitonal | Plain text, OCR on faint print |
+| Mode             | Effect                                                                  | Good for                         |
+| ---------------- | ----------------------------------------------------------------------- | -------------------------------- |
+| `none` (default) | Pure dewarp, unmodified pixels                                          | Archival, your own preprocessing |
+| `grayscale`      | Plain desaturate (no shadow handling)                                   | Neutral look, smaller files      |
+| `enhanced`       | **Shadow removal** + background whitening, colour kept ("magic colour") | Photos in uneven light           |
+| `blackAndWhite`  | **Shadow removal** + adaptive/Otsu threshold, near-bitonal              | Plain text, OCR on faint print   |
 
 `enhanced` and `blackAndWhite` genuinely remove uneven lighting and soft
 shadows — not just global contrast. The technique is the classic
