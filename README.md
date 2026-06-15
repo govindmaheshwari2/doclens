@@ -91,42 +91,26 @@ for (final page in pages) {
 ```
 
 …or mount it directly as a widget and handle the result yourself via
-`onComplete` (the batch analogue of `DoclensScreen.onCapture`):
+`onComplete` (the batch analogue of `DoclensScreen.onCapture`). Unlike the
+single-page widget, `DoclensMultiScreen` is self-contained — no
+`DoclensController` to wire up:
 
 ```dart
 DoclensMultiScreen(
-  onComplete: (pages) {
-    // pages: List<ScanResult>, in order
+  maxPages: 20,                    // null = unlimited
+  imageEnhancement: ImageEnhancement.enhanced,
+  autoOrientation: AutoOrientation.auto,
+  onPagesChanged: (pages) {
+    // fires on every add / remove / reorder — update a counter, etc.
   },
-)
-```
-
-The live preview grows a thumbnail rail and a **Done** button; the review
-screen's accept button reads **Add**. Tap the rail to open a page manager
-that **reorders** (drag) and **deletes** pages, and closing with
-uncommitted pages prompts a discard confirmation. Pass `maxPages` to cap
-the batch; every other `DoclensScreen` knob (enhancement, auto-orientation,
-overlay style, review builders, …) carries over.
-
-**Multi-page / batch.** `DoclensMultiScreen` is the batch sibling of
-`DoclensScreen` — keep the camera open and collect a stack of pages in one
-session. Use it as a one-line route:
-
-```dart
-final List<ScanResult>? pages = await DoclensMultiScreen.scan(context);
-if (pages == null) return;             // user cancelled
-for (final page in pages) {
-  print(page.croppedImagePath);
-}
-```
-
-…or mount it directly as a widget and handle the result yourself via
-`onComplete` (the batch analogue of `DoclensScreen.onCapture`):
-
-```dart
-DoclensMultiScreen(
   onComplete: (pages) {
-    // pages: List<ScanResult>, in order
+    // pages: List<ScanResult>, in order, when the user taps "Done"
+    for (final page in pages) {
+      // page.croppedImagePath  — perspective-warped JPEG
+      // page.detectedQuad      — Quad in raw image pixel coords
+      // page.warpError         — non-null if the warp failed
+    }
+    Navigator.of(context).pop();   // with onComplete set, you drive navigation
   },
 )
 ```
@@ -359,6 +343,83 @@ final result = await DoclensScreen.scan(
 | ---------------- | -------------------------------------------------------------- |
 | `none` (default) | Keep the crop's in-frame orientation                           |
 | `auto`           | Detect the dominant text direction and rotate the crop upright |
+
+Detection reuses the OS text APIs already on each platform — Apple Vision's
+`VNRecognizeTextRequest` on iOS and Play-services ML Kit text recognition on
+Android — so **no model is bundled** (the Android model is delivered on demand
+by Google Play services, exactly like `scanWithNativeUI`). The crop is read at
+each of the four 90° rotations and turned to whichever reads as the most
+confident text; a blank or purely graphical page (no confident text) is left
+untouched. Like enhancement, it runs on the cropped output only — the raw image
+is never rotated — and travels on `ScannerConfig`, so it applies to captures
+and to re-warps via `EditCornersScreen`.
+
+For a **manual** rotate control (e.g. a button in your review UI), call the
+controller directly — `quarterTurns` is clockwise and normalized modulo 4, so
+`-1` and `3` both turn one step the respective way:
+
+```dart
+final rotatedPath = await controller.rotateImage(scan.croppedImagePath!, 1);
+```
+
+## Image enhancement & shadow removal
+
+By default the cropped output is a pure dewarp — the original pixels,
+straightened, with nothing else touched. Set `imageEnhancement` to apply a
+post-warp filter to the **cropped** image (the raw image is never modified):
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  imageEnhancement: ImageEnhancement.blackAndWhite, // best for OCR
+);
+```
+
+| Mode             | Effect                                                                  | Good for                         |
+| ---------------- | ----------------------------------------------------------------------- | -------------------------------- |
+| `none` (default) | Pure dewarp, unmodified pixels                                          | Archival, your own preprocessing |
+| `grayscale`      | Plain desaturate (no shadow handling)                                   | Neutral look, smaller files      |
+| `enhanced`       | **Shadow removal** + background whitening, colour kept ("magic colour") | Photos in uneven light           |
+| `blackAndWhite`  | **Shadow removal** + adaptive/Otsu threshold, near-bitonal              | Plain text, OCR on faint print   |
+
+`enhanced` and `blackAndWhite` genuinely remove uneven lighting and soft
+shadows — not just global contrast. The technique is the classic
+illumination-division ("flatten") used by document scanners: estimate the
+lighting and divide it out. It runs entirely on-device with **no bundled
+model and no extra dependency**:
+
+- **iOS** uses Apple's built-in `CIDocumentEnhancer` (iOS 16+), falling back
+  to `CIHighlightShadowAdjust` (local shadow lift) on older OSes;
+  `blackAndWhite` desaturates then binarises with `CIColorThresholdOtsu`.
+- **Android** estimates the background from a heavily downscaled copy and
+  divides it out per pixel (adaptive-mean thresholding for `blackAndWhite`).
+
+Enhancement applies to both the capture's cropped output and any re-warp
+done through `EditCornersScreen` (it travels on the controller's config).
+It's a knob on `ScannerConfig` too, so it works from every entry point.
+
+> For the absolute best shadow/glare removal, the OS-native scanners
+> (`scanWithNativeUI`) apply Apple's / Google's own document cleanup — at the
+> cost of using their full-screen UI instead of this package's custom flow.
+
+## Auto-orientation & rotate
+
+A capture only knows a document's *in-frame* orientation — shoot a page
+sideways or upside-down and the dewarped crop comes out the same way. Set
+`autoOrientation` to detect the page's text direction on-device and rotate the
+crop in 90° steps so it reads upright:
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  autoOrientation: AutoOrientation.auto,
+);
+```
+
+| Mode | Effect |
+| --- | --- |
+| `none` (default) | Keep the crop's in-frame orientation |
+| `auto` | Detect the dominant text direction and rotate the crop upright |
 
 Detection reuses the OS text APIs already on each platform — Apple Vision's
 `VNRecognizeTextRequest` on iOS and Play-services ML Kit text recognition on
