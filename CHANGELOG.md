@@ -1,4 +1,4 @@
-## 0.0.6
+## 0.0.5
 
 **Auto-orientation (upright) for the cropped output, plus a manual rotate API**
 
@@ -17,8 +17,6 @@
 - New `DoclensController.rotateImage(path, quarterTurns)` (and `rotateImage`
   channel method) for a manual rotate control — `quarterTurns` is clockwise and
   normalized modulo 4. Writes a new file; the source is left untouched.
-
-## 0.0.5
 
 **Image enhancement & shadow removal on the cropped output**
 
