@@ -4,6 +4,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'method_channel_platform.dart';
 import 'models.dart';
+import 'ocr.dart';
 import 'quad.dart';
 
 /// Raw event from the native detection stream.
@@ -74,6 +75,20 @@ abstract class DoclensPlatform extends PlatformInterface {
 
   /// Stream of detection frames. Null quad means "nothing detected this frame".
   Stream<DetectionEvent> detectionEvents();
+
+  /// Recognise text (OCR) in the image at [imagePath] entirely on-device.
+  ///
+  /// Uses the OS text APIs already present on each platform — Apple Vision's
+  /// `VNRecognizeTextRequest` on iOS and Play-services ML Kit text recognition
+  /// on Android — so no model is bundled. Works on any JPEG/PNG on disk
+  /// (typically a [ScanResult.croppedImagePath]); no camera session or
+  /// `initialize()` call is required.
+  ///
+  /// Returns an [OcrResult] with the full text plus per-block / per-line
+  /// bounding boxes and confidence. When nothing is recognised (blank or
+  /// graphical page, or the recogniser is unavailable) the result is empty
+  /// ([OcrResult.isEmpty]) rather than an error.
+  Future<OcrResult> recognizeText({required String imagePath});
 
   /// Present the OS-native document scanner UI (VisionKit on iOS,
   /// ML Kit Document Scanner on Android). Returns the cropped page image

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import 'method_channel_platform.dart';
 import 'models.dart';
+import 'ocr.dart';
 import 'platform_interface.dart';
 import 'quad.dart';
 import 'quad_smoother.dart';
@@ -303,6 +304,24 @@ class DoclensController extends ChangeNotifier {
       imagePath: imagePath,
       quarterTurns: quarterTurns,
     );
+  }
+
+  /// Recognise text (OCR) in the image at [imagePath] on-device, returning an
+  /// [OcrResult] with the full text plus per-block / per-line bounding boxes
+  /// and confidence.
+  ///
+  /// Typically called on a capture's [ScanResult.croppedImagePath] (run
+  /// [ScannerConfig.imageEnhancement] of `blackAndWhite` first for the cleanest
+  /// OCR on faint print). It is a pure file operation — needs no camera, so it
+  /// works whether or not [initialize] has been called. (You can also call
+  /// `DoclensPlatform.instance.recognizeText(...)` directly without a
+  /// controller.)
+  ///
+  /// An empty result ([OcrResult.isEmpty]) means no confident text was found —
+  /// it is not an error.
+  Future<OcrResult> recognizeText(String imagePath) {
+    _ensureNotDisposed();
+    return DoclensPlatform.instance.recognizeText(imagePath: imagePath);
   }
 
   Future<void> setFlashMode(FlashMode mode) async {

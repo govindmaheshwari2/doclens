@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import 'models.dart';
+import 'ocr.dart';
 import 'platform_interface.dart';
 import 'quad.dart';
 
@@ -139,6 +140,22 @@ class MethodChannelDoclens extends DoclensPlatform {
         previewSize: previewSize,
       );
     });
+  }
+
+  @override
+  Future<OcrResult> recognizeText({required String imagePath}) async {
+    try {
+      final raw = await _method.invokeMethod<Map<dynamic, dynamic>>(
+        'recognizeText',
+        {'imagePath': imagePath},
+      );
+      if (raw == null) {
+        throw const ScannerCaptureException('Native returned null OCR result');
+      }
+      return OcrResult.fromMap(raw);
+    } on PlatformException catch (e) {
+      throw _translate(e);
+    }
   }
 
   @override

@@ -4,6 +4,7 @@ library;
 
 export 'src/controller.dart';
 export 'src/models.dart';
+export 'src/ocr.dart';
 export 'src/platform_interface.dart' show DoclensPlatform, DetectionEvent;
 export 'src/quad.dart';
 export 'src/quad_smoother.dart';

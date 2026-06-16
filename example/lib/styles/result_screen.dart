@@ -79,6 +79,7 @@ class ResultScreen extends StatefulWidget {
 class _ResultScreenState extends State<ResultScreen> {
   late ScanResult _result = widget.result;
   bool _editing = false;
+  bool _ocrBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -104,13 +105,43 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
             _Actions(
               accent: widget.accent,
-              busy: _editing,
+              busy: _editing || _ocrBusy,
               onRetake: () => Navigator.of(context).pop(),
               onEditCorners: _editCorners,
+              onOcr: cropped == null ? null : _runOcr,
               onUse: () => Navigator.of(context).pop(_result),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _runOcr() async {
+    final cropped = _result.croppedImagePath;
+    if (cropped == null) return;
+    setState(() => _ocrBusy = true);
+    OcrResult? ocr;
+    Object? error;
+    try {
+      ocr = await widget.controller.recognizeText(cropped);
+    } catch (e) {
+      error = e;
+    } finally {
+      if (mounted) setState(() => _ocrBusy = false);
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _kSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _OcrSheet(
+        accent: widget.accent,
+        ocr: ocr,
+        error: error,
       ),
     );
   }
@@ -395,12 +426,14 @@ class _Actions extends StatelessWidget {
     required this.busy,
     required this.onRetake,
     required this.onEditCorners,
+    required this.onOcr,
     required this.onUse,
   });
   final Color accent;
   final bool busy;
   final VoidCallback onRetake;
   final VoidCallback onEditCorners;
+  final VoidCallback? onOcr;
   final VoidCallback onUse;
 
   @override
@@ -416,6 +449,10 @@ class _Actions extends StatelessWidget {
           _Ghost(icon: Icons.refresh, onTap: onRetake),
           const SizedBox(width: 10),
           _Ghost(icon: Icons.crop, onTap: onEditCorners),
+          if (onOcr != null) ...[
+            const SizedBox(width: 10),
+            _Ghost(icon: Icons.text_fields, onTap: busy ? null : onOcr!),
+          ],
           const Spacer(),
           _Primary(accent: accent, onTap: onUse, busy: busy),
         ],
@@ -427,9 +464,10 @@ class _Actions extends StatelessWidget {
 class _Ghost extends StatelessWidget {
   const _Ghost({required this.icon, required this.onTap});
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -444,7 +482,8 @@ class _Ghost extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: _kTextSecondary, size: 16),
+            Icon(icon,
+                color: enabled ? _kTextSecondary : _kTextDim, size: 16),
           ],
         ),
       ),
@@ -483,6 +522,90 @@ class _Primary extends StatelessWidget {
                 ],
         ),
         child: const Icon(Icons.arrow_forward, color: _kInk, size: 16),
+      ),
+    );
+  }
+}
+
+// ---- OCR result sheet ------------------------------------------------
+
+class _OcrSheet extends StatelessWidget {
+  const _OcrSheet({required this.accent, required this.ocr, required this.error});
+  final Color accent;
+  final OcrResult? ocr;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final ocr = this.ocr;
+    final String body;
+    final String eyebrow;
+    if (error != null) {
+      eyebrow = 'OCR FAILED';
+      body = '$error';
+    } else if (ocr == null || ocr.isEmpty) {
+      eyebrow = 'NO TEXT FOUND';
+      body = 'The recogniser did not find confident text on this page.';
+    } else {
+      eyebrow = '${ocr.lines.length} LINES';
+      body = ocr.text;
+    }
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16,
+        20,
+        MediaQuery.of(context).padding.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _kBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                eyebrow,
+                style: _mono(
+                  size: 10,
+                  color: accent,
+                  weight: FontWeight.w700,
+                  letterSpacing: 0.28,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('Recognised text', style: _serif(size: 22)),
+          const SizedBox(height: 14),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.45,
+            ),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                body,
+                style: _mono(size: 13, color: _kTextPrimary, height: 1.5),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
