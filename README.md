@@ -400,20 +400,21 @@ final result = await DoclensScreen.scan(
 );
 if (result?.croppedImagePath == null) return;
 
-final ocr = await controller.recognizeText(result!.croppedImagePath!);
+final ocr = await DoclensPlatform.instance.recognizeText(
+  imagePath: result!.croppedImagePath!,
+);
 print(ocr.text);                                   // the full transcript
 for (final line in ocr.lines) {
   print('${line.text}  @ ${line.boundingBox}  (${line.confidence})');
 }
 ```
 
-No `DoclensController` is required — call it straight off the platform instance
-on any JPEG/PNG (it needs no camera session, so no `initialize()`):
+It needs no camera session (no `initialize()`), so the call lives on the
+platform instance and works on any JPEG/PNG on disk. If you already manage a
+`DoclensController`, the same method is on it too:
 
 ```dart
-final ocr = await DoclensPlatform.instance.recognizeText(
-  imagePath: somePath,
-);
+final ocr = await controller.recognizeText(somePath);
 ```
 
 `OcrResult` exposes `text` (blocks joined by newlines), `blocks` (each an
