@@ -65,8 +65,7 @@ object TextRecognizer {
                     mapOf(
                         "text" to block.text,
                         "boundingBox" to rectToList(block.boundingBox),
-                        "recognizedLanguage" to block.recognizedLanguage
-                            .ifEmpty { null },
+                        "recognizedLanguage" to languageOrNull(block.recognizedLanguage),
                         "lines" to lines,
                     ),
                 )
@@ -103,4 +102,13 @@ object TextRecognizer {
     /** `confidence` can be null or NaN on some models — drop it then. */
     private fun confidenceOf(conf: Float?): Double? =
         if (conf == null || conf.isNaN()) null else conf.toDouble()
+
+    /**
+     * ML Kit reports a BCP-47 tag (e.g. `en`), an empty string, or the sentinel
+     * `und` ("undetermined") when it can't tell. Normalise both no-value cases
+     * to `null` so the cross-platform contract matches iOS (which reports no
+     * per-block language at all).
+     */
+    private fun languageOrNull(lang: String?): String? =
+        if (lang.isNullOrEmpty() || lang == "und") null else lang
 }

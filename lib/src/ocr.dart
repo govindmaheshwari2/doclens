@@ -10,6 +10,11 @@ import 'dart:ui';
 /// delivered on demand by Google Play services, exactly like the OS-native
 /// scanner).
 ///
+/// Script coverage follows the underlying recogniser: Android uses ML Kit's
+/// default **Latin-script** recogniser, while iOS Vision recognises the full
+/// set of languages it ships with. For non-Latin scripts on Android, run a
+/// dedicated ML Kit script model on [ScanResult.croppedImagePath] yourself.
+///
 /// All bounding boxes are in the recognised image's **pixel** coordinates with
 /// the origin at the top-left (the same convention as [ScanResult.detectedQuad]
 /// in raw image pixels). Use [imageSize] to map boxes onto a scaled preview.

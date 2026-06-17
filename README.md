@@ -431,6 +431,11 @@ level) on iOS and Play-services ML Kit text recognition on Android — so **no
 model is bundled** (the Android model is delivered on demand by Google Play
 services, exactly like the OS-native scanner).
 
+> Script coverage follows the recogniser: Android uses ML Kit's default
+> **Latin-script** model; iOS Vision recognises its full language set. For
+> non-Latin scripts on Android, run a dedicated ML Kit script model on the
+> cropped path yourself.
+
 ## What this package deliberately does NOT do
 
 - Multi-page PDF export — returns image paths; assemble a PDF yourself.
