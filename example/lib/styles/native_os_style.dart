@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:doclens/doclens.dart';
 
+import '../ocr_sheet.dart';
+
 /// Launches the OS-native document scanner (VisionKit on iOS,
 /// ML Kit Document Scanner on Android) and shows the resulting pages.
 ///
@@ -134,13 +136,47 @@ class _Pages extends StatelessWidget {
             itemCount: paths.length,
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (context, i) {
-              return Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white24),
-                  borderRadius: BorderRadius.circular(8),
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => showOcrSheet(context, paths[i], dark: true),
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  clipBehavior: Clip.hardEdge,
+                  child: Stack(
+                    children: [
+                      Image.file(File(paths[i])),
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.text_fields,
+                                  size: 13, color: Colors.white),
+                              SizedBox(width: 5),
+                              Text('OCR',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                clipBehavior: Clip.hardEdge,
-                child: Image.file(File(paths[i])),
               );
             },
           ),

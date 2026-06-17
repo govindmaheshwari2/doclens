@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:doclens/doclens.dart';
 import 'package:flutter/material.dart';
 
+import '../ocr_sheet.dart';
+
 // =====================================================================
 //  Review screen used by the branded scanner.
 //
@@ -79,7 +81,6 @@ class ResultScreen extends StatefulWidget {
 class _ResultScreenState extends State<ResultScreen> {
   late ScanResult _result = widget.result;
   bool _editing = false;
-  bool _ocrBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -105,7 +106,7 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
             _Actions(
               accent: widget.accent,
-              busy: _editing || _ocrBusy,
+              busy: _editing,
               onRetake: () => Navigator.of(context).pop(),
               onEditCorners: _editCorners,
               onOcr: cropped == null ? null : _runOcr,
@@ -117,33 +118,13 @@ class _ResultScreenState extends State<ResultScreen> {
     );
   }
 
-  Future<void> _runOcr() async {
+  /// Extract text from the cropped scan. The shared OCR sheet runs the
+  /// package's `recognizeText` on-device and renders the transcript; it's
+  /// dark-themed and tinted with this style's accent to match the screen.
+  void _runOcr() {
     final cropped = _result.croppedImagePath;
     if (cropped == null) return;
-    setState(() => _ocrBusy = true);
-    OcrResult? ocr;
-    Object? error;
-    try {
-      ocr = await widget.controller.recognizeText(cropped);
-    } catch (e) {
-      error = e;
-    } finally {
-      if (mounted) setState(() => _ocrBusy = false);
-    }
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: _kSurface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => _OcrSheet(
-        accent: widget.accent,
-        ocr: ocr,
-        error: error,
-      ),
-    );
+    showOcrSheet(context, cropped, accent: widget.accent, dark: true);
   }
 
   Future<void> _editCorners() async {
@@ -522,90 +503,6 @@ class _Primary extends StatelessWidget {
                 ],
         ),
         child: const Icon(Icons.arrow_forward, color: _kInk, size: 16),
-      ),
-    );
-  }
-}
-
-// ---- OCR result sheet ------------------------------------------------
-
-class _OcrSheet extends StatelessWidget {
-  const _OcrSheet({required this.accent, required this.ocr, required this.error});
-  final Color accent;
-  final OcrResult? ocr;
-  final Object? error;
-
-  @override
-  Widget build(BuildContext context) {
-    final ocr = this.ocr;
-    final String body;
-    final String eyebrow;
-    if (error != null) {
-      eyebrow = 'OCR FAILED';
-      body = '$error';
-    } else if (ocr == null || ocr.isEmpty) {
-      eyebrow = 'NO TEXT FOUND';
-      body = 'The recogniser did not find confident text on this page.';
-    } else {
-      eyebrow = '${ocr.lines.length} LINES';
-      body = ocr.text;
-    }
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        16,
-        20,
-        MediaQuery.of(context).padding.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: _kBorder,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                eyebrow,
-                style: _mono(
-                  size: 10,
-                  color: accent,
-                  weight: FontWeight.w700,
-                  letterSpacing: 0.28,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text('Recognised text', style: _serif(size: 22)),
-          const SizedBox(height: 14),
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.45,
-            ),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                body,
-                style: _mono(size: 13, color: _kTextPrimary, height: 1.5),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
