@@ -156,6 +156,7 @@ class QuadOverlay extends StatelessWidget {
       case DetectionStatus.confirming:
         return accent;
       case DetectionStatus.aligned:
+      case DetectionStatus.focusing:
         return accent.withValues(alpha: 0.95);
       case DetectionStatus.tilted:
       case DetectionStatus.tooClose:

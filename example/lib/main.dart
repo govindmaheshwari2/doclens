@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'ocr_sheet.dart';
 import 'styles/branded_style.dart';
 import 'styles/native_os_style.dart';
 
@@ -1124,6 +1125,54 @@ class _ReturnedResultState extends State<_ReturnedResult> {
   ScanResult get result => widget.result;
   ImageEnhancement? get enhancement => widget.enhancement;
 
+  /// Run on-device OCR on the displayed image. The shared sheet calls the
+  /// package's `recognizeText` itself (a pure file op — no camera session or
+  /// controller needed) on the current, possibly-rotated, crop path.
+  void _runOcr() => showOcrSheet(context, _path, accent: _kRust);
+
+  /// Show the returned [ScanResult] metadata in a bottom sheet.
+  void _showDetails() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _kPaper,
+      showDragHandle: false,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'RETURNED SCANRESULT',
+                  style: _mono(
+                    size: 10,
+                    color: _kRust,
+                    weight: FontWeight.w700,
+                    letterSpacing: 0.26,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text('Drop-in scanner output',
+                    style: _serifS(size: 22, italic: true)),
+                const SizedBox(height: 16),
+                if (enhancement != null)
+                  _kv('imageEnhancement', enhancement!.name),
+                _kv('rawImageSize',
+                    '${result.rawImageSize.width.toInt()} × ${result.rawImageSize.height.toInt()}'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   /// Manual rotate — a pure file op via the platform instance, so it needs no
   /// camera session or controller. `evict` clears the old file from Flutter's
   /// image cache so the rotated bytes actually show.
@@ -1145,110 +1194,99 @@ class _ReturnedResultState extends State<_ReturnedResult> {
   Widget build(BuildContext context) {
     final path = _path;
     return Scaffold(
-      backgroundColor: _kPaper,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 14, 22, 4),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).maybePop(),
-                    child: Container(
-                      height: 36,
-                      width: 36,
-                      decoration: BoxDecoration(
-                        color: _kPaperHi,
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(color: _kRule),
+      backgroundColor: const Color(0xFF14130F),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Full-screen image.
+          Positioned.fill(
+            child: Image.file(File(path), fit: BoxFit.contain),
+          ),
+
+          // Top bar — back + rotate, over a subtle scrim for legibility.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x99000000), Colors.transparent],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  child: Row(
+                    children: [
+                      _OverlayIconButton(
+                        icon: Icons.arrow_back,
+                        onTap: () => Navigator.of(context).maybePop(),
                       ),
-                      child:
-                          const Icon(Icons.arrow_back, color: _kInk, size: 18),
-                    ),
+                      const Spacer(),
+                      _OverlayIconButton(
+                        icon: Icons.rotate_left,
+                        enabled: !_rotating,
+                        onTap: () => _rotate(-1),
+                      ),
+                      const SizedBox(width: 10),
+                      _OverlayIconButton(
+                        icon: Icons.rotate_right,
+                        enabled: !_rotating,
+                        onTap: () => _rotate(1),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'RETURNED SCANRESULT',
-                          style: _mono(
-                            size: 10,
-                            color: _kRust,
-                            weight: FontWeight.w700,
-                            letterSpacing: 0.26,
-                          ),
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom action bar — Details + OCR, each opening a bottom sheet.
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Color(0xCC000000), Colors.transparent],
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _OverlayActionButton(
+                          icon: Icons.info_outline,
+                          label: 'DETAILS',
+                          onTap: _showDetails,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Drop-in scanner output',
-                          style: _serifS(size: 22, italic: true),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _OverlayActionButton(
+                          icon: Icons.text_fields,
+                          label: 'OCR',
+                          filled: true,
+                          onTap: _runOcr,
                         ),
-                      ],
-                    ),
-                  ),
-                  _RotateButton(
-                    icon: Icons.rotate_left,
-                    enabled: !_rotating,
-                    onTap: () => _rotate(-1),
-                  ),
-                  const SizedBox(width: 8),
-                  _RotateButton(
-                    icon: Icons.rotate_right,
-                    enabled: !_rotating,
-                    onTap: () => _rotate(1),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 22),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: _kPaperHi,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _kRule),
-                  ),
-                  padding: const EdgeInsets.all(10),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.file(File(path), fit: BoxFit.contain),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 14),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: _kPaperHi,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _kRuleSoft),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (enhancement != null)
-                      _kv('imageEnhancement', enhancement!.name),
-                    _kv('rawImagePath', result.rawImagePath),
-                    _kv('croppedImagePath',
-                        result.croppedImagePath ?? '— (none)'),
-                    _kv('rawImageSize',
-                        '${result.rawImageSize.width.toInt()} × ${result.rawImageSize.height.toInt()}'),
-                    _kv('warpError', result.warpError ?? '— (none)'),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1291,9 +1329,16 @@ class _ReturnedResultState extends State<_ReturnedResult> {
 //  Returned-batch preview (multi-page entry)
 // =====================================================================
 
-class _ReturnedBatch extends StatelessWidget {
+class _ReturnedBatch extends StatefulWidget {
   const _ReturnedBatch({required this.pages});
   final List<ScanResult> pages;
+
+  @override
+  State<_ReturnedBatch> createState() => _ReturnedBatchState();
+}
+
+class _ReturnedBatchState extends State<_ReturnedBatch> {
+  late final List<ScanResult> pages = List.of(widget.pages);
 
   @override
   Widget build(BuildContext context) {
@@ -1360,26 +1405,55 @@ class _ReturnedBatch extends StatelessWidget {
                 itemBuilder: (context, i) {
                   final page = pages[i];
                   final path = page.croppedImagePath ?? page.rawImagePath;
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: _kPaperHi,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _kRule),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Page ${i + 1}', style: _mono(size: 10)),
-                        const SizedBox(height: 6),
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.file(File(path), fit: BoxFit.cover,
-                                width: double.infinity),
-                          ),
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => _BatchPageViewer(
+                          pages: pages,
+                          initialIndex: i,
+                          onRotated: (index, rotatedPath) => setState(() {
+                            pages[index] = pages[index]
+                                .copyWith(croppedImagePath: rotatedPath);
+                          }),
                         ),
-                      ],
+                      ),
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _kPaperHi,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _kRule),
+                      ),
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text('Page ${i + 1}', style: _mono(size: 10)),
+                              const Spacer(),
+                              const Icon(Icons.open_in_full,
+                                  size: 13, color: _kRust),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.file(File(path), fit: BoxFit.cover,
+                                  width: double.infinity),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text('TAP TO OPEN',
+                              style: _mono(
+                                size: 8,
+                                color: _kInkDim,
+                                letterSpacing: 0.2,
+                              )),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -1392,34 +1466,258 @@ class _ReturnedBatch extends StatelessWidget {
   }
 }
 
-class _RotateButton extends StatelessWidget {
-  const _RotateButton({
+// =====================================================================
+//  Full-screen swipeable viewer for a multi-page batch
+// =====================================================================
+
+class _BatchPageViewer extends StatefulWidget {
+  const _BatchPageViewer({
+    required this.pages,
+    required this.initialIndex,
+    required this.onRotated,
+  });
+  final List<ScanResult> pages;
+  final int initialIndex;
+
+  /// Called with the page index and the new image path after a manual rotate,
+  /// so the caller can persist it back into its [ScanResult] list.
+  final void Function(int index, String rotatedPath) onRotated;
+
+  @override
+  State<_BatchPageViewer> createState() => _BatchPageViewerState();
+}
+
+class _BatchPageViewerState extends State<_BatchPageViewer> {
+  late final PageController _controller =
+      PageController(initialPage: widget.initialIndex);
+  late int _index = widget.initialIndex;
+
+  /// Current display path per page — seeded from each scan, replaced in place
+  /// when a page is rotated.
+  late final List<String> _paths = [
+    for (final p in widget.pages) p.croppedImagePath ?? p.rawImagePath,
+  ];
+  bool _rotating = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _runOcr() => showOcrSheet(context, _paths[_index], accent: _kRust);
+
+  Future<void> _rotate(int quarterTurns) async {
+    if (_rotating) return;
+    setState(() => _rotating = true);
+    final i = _index;
+    try {
+      final out = await DoclensPlatform.instance
+          .rotateImage(imagePath: _paths[i], quarterTurns: quarterTurns);
+      await FileImage(File(out)).evict();
+      if (!mounted) return;
+      setState(() => _paths[i] = out);
+      widget.onRotated(i, out);
+    } finally {
+      if (mounted) setState(() => _rotating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF14130F),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: _controller,
+            itemCount: widget.pages.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (_, i) =>
+                Image.file(File(_paths[i]), fit: BoxFit.contain),
+          ),
+
+          // Top bar — back + page counter + rotate.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x99000000), Colors.transparent],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  child: Row(
+                    children: [
+                      _OverlayIconButton(
+                        icon: Icons.arrow_back,
+                        onTap: () => Navigator.of(context).maybePop(),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18)),
+                        ),
+                        child: Text(
+                          '${_index + 1} / ${widget.pages.length}',
+                          style: _mono(
+                            size: 11,
+                            color: Colors.white,
+                            weight: FontWeight.w700,
+                            letterSpacing: 0.24,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      _OverlayIconButton(
+                        icon: Icons.rotate_left,
+                        enabled: !_rotating,
+                        onTap: () => _rotate(-1),
+                      ),
+                      const SizedBox(width: 10),
+                      _OverlayIconButton(
+                        icon: Icons.rotate_right,
+                        enabled: !_rotating,
+                        onTap: () => _rotate(1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom bar — OCR.
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Color(0xCC000000), Colors.transparent],
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+                  child: _OverlayActionButton(
+                    icon: Icons.text_fields,
+                    label: 'OCR',
+                    filled: true,
+                    onTap: _runOcr,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Circular icon button rendered over the full-screen image (top bar).
+class _OverlayIconButton extends StatelessWidget {
+  const _OverlayIconButton({
     required this.icon,
-    required this.enabled,
     required this.onTap,
+    this.enabled = true,
   });
   final IconData icon;
-  final bool enabled;
   final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        height: 36,
-        width: 36,
+        height: 40,
+        width: 40,
         decoration: BoxDecoration(
-          color: _kPaperHi,
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: _kRule),
+          color: Colors.black.withValues(alpha: 0.45),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
         ),
         child: Icon(
           icon,
-          color: enabled ? _kInk : _kInkDim,
-          size: 18,
+          color: Colors.white.withValues(alpha: enabled ? 1 : 0.4),
+          size: 19,
         ),
       ),
     );
   }
 }
+
+/// Pill action button rendered over the full-screen image (bottom bar).
+class _OverlayActionButton extends StatelessWidget {
+  const _OverlayActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = filled ? _kPaperHi : Colors.white;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: filled ? _kRust : Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: filled
+                ? Colors.transparent
+                : Colors.white.withValues(alpha: 0.18),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 17, color: fg),
+            const SizedBox(width: 9),
+            Text(
+              label,
+              style: _mono(
+                size: 11,
+                color: fg,
+                weight: FontWeight.w700,
+                letterSpacing: 0.26,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// =====================================================================
+//  OCR — extract text from a scan (recognizeText)
+// =====================================================================
+

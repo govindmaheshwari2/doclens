@@ -195,7 +195,25 @@ Auto-capture is a three-step state machine, modeled on the feel of Apple's nativ
 
 Move the camera during that window and the capture aborts. Every threshold lives on `ScannerConfig` and is also a parameter on `DoclensScreen.scan(...)`.
 
-## Focus
+### Sharpness gate — no blurry captures
+
+When `ScannerConfig.enableSharpnessGate` is `true` (the default),
+auto-capture also waits for the frame to be in focus before firing, not
+just geometrically aligned. Once the document aligns, the controller locks
+focus on the quad's centroid and holds the shutter, and status reports
+`DetectionStatus.focusing` so the default overlay shows a "focusing, hold
+steady" hint.
+
+Focus is judged on the native side from a per-frame variance-of-Laplacian
+sharpness measured inside the quad, surfaced as `DetectionEvent.sharpness`.
+A fixed threshold doesn't work, since sharpness numbers swing with scene
+and distance, so a frame must clear `sharpnessFloor` (`8.0` default) and
+then plateau near the top of a short rolling window. If focus hasn't
+cleared by `autoCaptureFocusTimeout` (2500 ms default), capture fires
+anyway so nobody gets stuck; the user can review and re-shoot. Set
+`enableSharpnessGate: false` for the old geometry-only behaviour.
+
+## Continuous autofocus + tap-to-focus
 
 The native session runs continuous autofocus by default on both platforms (`.continuousAutoFocus` on iOS, `CONTROL_AF_MODE_CONTINUOUS_PICTURE` on Android), and on iOS it adds the near-distance hint that suits holding an A4 page at arm's length.
 
@@ -221,6 +239,12 @@ EditCornersScreen(
 ```
 
 Every handle, line, and button here is overridable through builders too.
+
+While a corner is dragged, a **magnifier loupe** shows the region under
+the finger so the point being placed is never hidden. It is on by default
+(`showMagnifier`) and tunable via `magnifierSize` and `magnifierScale`;
+pass a `magnifierBuilder` to supply a custom loupe widget (return `null`
+to fall back to the bundled one).
 
 ## Image enhancement & shadow removal
 
@@ -346,6 +370,10 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
   `dots`, `dotsLine`, `glow`) with status-driven colour. Pass the enum
   via `DoclensScreen.overlayStyle` or use a constructor directly inside
   an `overlayBuilder`.
+- **`recognizeText()`** — on-device OCR over an image path. On
+  `DoclensController` or directly on `DoclensPlatform.instance`; needs no
+  camera session. Returns an **`OcrResult`** (`text`, `blocks`, `lines`,
+  `imageSize`) with per-block / per-line bounding boxes and confidence.
 - **`scanWithNativeUI()`** on `DoclensPlatform.instance` — full
   native-modal scan, returns `List<String>?`.
 - **`ScannerConfig`** — every feature flag with a sensible default
@@ -364,10 +392,57 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
   `ScannerUnavailableException`, `ScannerInitializationException`,
   `ScannerCaptureException`.
 
-## What this package leaves to you
+## On-device OCR (text recognition)
 
-- OCR — returns image paths only; pair with a text-recognition library.
-  (`AutoOrientation.auto` reads text to find "upright" but never returns it.)
+Pull the text *out* of a scan. `recognizeText` runs full text recognition on
+any image on disk — typically a capture's `croppedImagePath` — and returns the
+transcript plus per-block / per-line bounding boxes and confidence:
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  imageEnhancement: ImageEnhancement.blackAndWhite, // cleanest for OCR
+);
+if (result?.croppedImagePath == null) return;
+
+final ocr = await DoclensPlatform.instance.recognizeText(
+  imagePath: result!.croppedImagePath!,
+);
+print(ocr.text);                                   // the full transcript
+for (final line in ocr.lines) {
+  print('${line.text}  @ ${line.boundingBox}  (${line.confidence})');
+}
+```
+
+It needs no camera session (no `initialize()`), so the call lives on the
+platform instance and works on any JPEG/PNG on disk. If you already manage a
+`DoclensController`, the same method is on it too:
+
+```dart
+final ocr = await controller.recognizeText(somePath);
+```
+
+`OcrResult` exposes `text` (blocks joined by newlines), `blocks` (each an
+`OcrBlock` with `lines`, a pixel-space `boundingBox`, and on Android a
+`recognizedLanguage`), and a flattened `lines` getter (`OcrLine` — `text`,
+`boundingBox`, `confidence`). All bounding boxes are in the recognised image's
+pixel coordinates (origin top-left); use `OcrResult.imageSize` to map them onto
+a scaled preview. A blank or purely graphical page yields an empty result
+(`OcrResult.isEmpty`) rather than an error.
+
+Like auto-orientation, recognition reuses the OS text APIs already on each
+platform — Apple Vision's `VNRecognizeTextRequest` (run at the `.accurate`
+level) on iOS and Play-services ML Kit text recognition on Android — so **no
+model is bundled** (the Android model is delivered on demand by Google Play
+services, exactly like the OS-native scanner).
+
+> Script coverage follows the recogniser: Android uses ML Kit's default
+> **Latin-script** model; iOS Vision recognises its full language set. For
+> non-Latin scripts on Android, run a dedicated ML Kit script model on the
+> cropped path yourself.
+
+## What this package deliberately does NOT do
+
 - Multi-page PDF export — returns image paths; assemble a PDF yourself.
 - Web or desktop targets.
 

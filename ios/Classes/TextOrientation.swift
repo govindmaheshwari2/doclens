@@ -28,17 +28,28 @@ enum TextOrientation {
             (0, .up), (1, .right), (2, .down), (3, .left),
         ]
 
-        var best = (turns: 0, score: 0.0)
-        for h in hypotheses {
-            let score = textScore(small, orientation: h.orientation)
-            if score > best.score {
-                best = (h.turns, score)
-            }
+        let scores = hypotheses.map { textScore(small, orientation: $0.orientation) }
+        let asIsScore = scores[0]
+
+        var best = (turns: 0, score: asIsScore)
+        for i in 1..<scores.count where scores[i] > best.score {
+            best = (hypotheses[i].turns, scores[i])
         }
-        // Require a meaningful amount of confident text before trusting a
-        // rotation — otherwise noise on a near-blank page could spin it.
-        return best.score >= 1.0 ? best.turns : 0
+
+        // Bias toward the current orientation. Upside-down (and sideways) Latin
+        // text still "reads" as low-confidence garbage, so a flipped crop can
+        // narrowly outscore the upright one. Only rotate when a hypothesis
+        // beats the as-is (.up) score by a clear margin, and clears an absolute
+        // floor — otherwise leave the crop untouched (the common false-180°
+        // flip that left the image upside-down while OCR, which detects
+        // orientation independently, read fine).
+        guard best.turns != 0 else { return 0 }
+        return (best.score >= 1.0 && best.score >= asIsScore * Self.minRotateMargin)
+            ? best.turns : 0
     }
+
+    /// A non-zero rotation must beat the as-is score by this factor to win.
+    private static let minRotateMargin = 1.30
 
     /// Confidence-weighted count of recognised characters when [cgImage] is
     /// interpreted with [orientation]. Higher = more upright-looking text.

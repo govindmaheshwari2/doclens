@@ -25,6 +25,12 @@ enum DetectionStatus {
   /// captured. Mirrors VisionKit's "found a document — hold still" cue.
   confirming,
 
+  /// Quad is aligned and stable, but the frame is not yet verifiably in
+  /// focus. The controller has requested a focus-lock on the document and
+  /// is holding the shutter until sharpness clears threshold (or the
+  /// focus timeout elapses). UI shows a "focusing — hold steady" hint.
+  focusing,
+
   /// Camera is producing frames, but no paper-like quad found.
   noPaper,
 }
@@ -143,6 +149,25 @@ class ScanResult {
   /// to retake or to nudge corners via `EditCornersScreen`.
   final String? warpError;
 
+  /// Returns a copy with the given fields replaced. Useful after a manual
+  /// rotate or re-warp, to persist the new [croppedImagePath] back into a
+  /// result the caller is holding.
+  ScanResult copyWith({
+    String? croppedImagePath,
+    String? rawImagePath,
+    Quad? detectedQuad,
+    Size? rawImageSize,
+    String? warpError,
+  }) {
+    return ScanResult(
+      croppedImagePath: croppedImagePath ?? this.croppedImagePath,
+      rawImagePath: rawImagePath ?? this.rawImagePath,
+      detectedQuad: detectedQuad ?? this.detectedQuad,
+      rawImageSize: rawImageSize ?? this.rawImageSize,
+      warpError: warpError ?? this.warpError,
+    );
+  }
+
   static ScanResult fromMap(Map<dynamic, dynamic> m) {
     final rawPath = m['rawImagePath'];
     final quadMap = m['quad'];
@@ -175,6 +200,9 @@ class ScannerConfig {
     this.autoCaptureCornerThreshold = 0.02,
     this.enableAutoCaptureConfirmation = true,
     this.autoCaptureConfirmationDelay = const Duration(milliseconds: 350),
+    this.enableSharpnessGate = true,
+    this.autoCaptureFocusTimeout = const Duration(milliseconds: 2500),
+    this.sharpnessFloor = 8.0,
     this.detectionThrottleHz = 15,
     this.enableQuadSmoothing = true,
     this.quadSmoothingWindow = 5,
@@ -202,7 +230,8 @@ class ScannerConfig {
     this.enableTelemetryLogging = false,
   })  : assert(detectionThrottleHz > 0 && detectionThrottleHz <= 60),
         assert(jpegQuality >= 1 && jpegQuality <= 100),
-        assert(autoCaptureCornerThreshold >= 0);
+        assert(autoCaptureCornerThreshold >= 0),
+        assert(sharpnessFloor >= 0);
 
   // Detection
 
@@ -242,6 +271,22 @@ class ScannerConfig {
   /// to "shutter" is therefore `autoCaptureStabilityDuration +
   /// autoCaptureConfirmationDelay` when confirmation is enabled.
   final Duration autoCaptureConfirmationDelay;
+
+  /// When `true` (default), auto-capture additionally waits for the frame
+  /// to be verifiably in focus (see [DetectionStatus.focusing]). When
+  /// `false`, auto-capture gates on geometry only (legacy behavior).
+  final bool enableSharpnessGate;
+
+  /// Maximum time the controller holds the shutter waiting for focus after
+  /// the document first aligns. If sharpness has not cleared threshold by
+  /// then, auto-capture fires anyway so the user is never stuck. The user
+  /// reviews the result and can re-shoot.
+  final Duration autoCaptureFocusTimeout;
+
+  /// Absolute minimum variance-of-Laplacian a frame must reach before it
+  /// can be considered in focus. Guards against the adaptive baseline
+  /// declaring an entirely-flat (and blurry) scene "sharp".
+  final double sharpnessFloor;
 
   final int detectionThrottleHz;
 
@@ -362,6 +407,8 @@ class ScannerConfig {
         'enableTapToFocus': enableTapToFocus,
         'enablePinchToZoom': enablePinchToZoom,
         'enableLowLightDetection': enableLowLightDetection,
+        'enableSharpnessGate': enableSharpnessGate,
+        'sharpnessFloor': sharpnessFloor,
       };
 }
 

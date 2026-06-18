@@ -368,6 +368,19 @@ extension ScannerSession: AVCaptureVideoDataOutputSampleBufferDelegate {
         let lowLight = config.enableLowLightDetection
             ? LumaEstimator.isLowLight(pixelBuffer: pixelBuffer) : false
 
+        // Sharpness over the previous frame's quad bbox (it moves little
+        // frame-to-frame). The pixel buffer is only valid synchronously
+        // here, so we score before handing off to the async detector.
+        let sharpnessRegion = lastQuadNormalized.map { q -> CGRect in
+            let xs = [q.topLeft.x, q.topRight.x, q.bottomRight.x, q.bottomLeft.x]
+            let ys = [q.topLeft.y, q.topRight.y, q.bottomRight.y, q.bottomLeft.y]
+            let minX = xs.min() ?? 0, maxX = xs.max() ?? 1
+            let minY = ys.min() ?? 0, maxY = ys.max() ?? 1
+            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        }
+        let sharpness = SharpnessEstimator.sharpness(
+            pixelBuffer: pixelBuffer, region: sharpnessRegion)
+
         // Orientation: see docs/decisions.md ("iOS Vision orientation").
         // Buffer is delivered already upright via the connection.
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer,
@@ -382,14 +395,14 @@ extension ScannerSession: AVCaptureVideoDataOutputSampleBufferDelegate {
                 let request = VNDetectDocumentSegmentationRequest { req, _ in
                     self.handleRectangles(
                         req.results as? [VNRectangleObservation] ?? [],
-                        lowLight: lowLight)
+                        lowLight: lowLight, sharpness: sharpness)
                 }
                 try? handler.perform([request])
             } else {
                 let request = VNDetectRectanglesRequest { req, _ in
                     self.handleRectangles(
                         req.results as? [VNRectangleObservation] ?? [],
-                        lowLight: lowLight)
+                        lowLight: lowLight, sharpness: sharpness)
                 }
                 // Docs-tuned defaults for documents, see
                 // developer.apple.com/documentation/vision/vndetectrectanglesrequest
@@ -415,7 +428,8 @@ extension ScannerSession: AVCaptureVideoDataOutputSampleBufferDelegate {
         return abs(sum) / 2
     }
 
-    private func handleRectangles(_ results: [VNRectangleObservation], lowLight: Bool) {
+    private func handleRectangles(_ results: [VNRectangleObservation],
+                                  lowLight: Bool, sharpness: Double) {
         let payload: [String: Any]
         // Document-presence gate: reject observations that are unlikely to
         // be a real document. We require (a) reasonable Vision confidence
@@ -442,10 +456,12 @@ extension ScannerSession: AVCaptureVideoDataOutputSampleBufferDelegate {
                 bottomLeft: CGPoint(x: obs.bottomLeft.x, y: 1.0 - obs.bottomLeft.y)
             )
             lastQuadNormalized = q
-            payload = ["quad": q.toMap(), "lowLight": lowLight]
+            payload = ["quad": q.toMap(), "lowLight": lowLight,
+                       "sharpness": sharpness]
         } else {
             lastQuadNormalized = nil
-            payload = ["quad": NSNull(), "lowLight": lowLight]
+            payload = ["quad": NSNull(), "lowLight": lowLight,
+                       "sharpness": sharpness]
         }
         eventSink(payload)
     }

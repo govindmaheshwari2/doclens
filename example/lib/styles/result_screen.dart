@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:doclens/doclens.dart';
 import 'package:flutter/material.dart';
 
+import '../ocr_sheet.dart';
+
 // =====================================================================
 //  Review screen used by the branded scanner.
 //
@@ -107,12 +109,22 @@ class _ResultScreenState extends State<ResultScreen> {
               busy: _editing,
               onRetake: () => Navigator.of(context).pop(),
               onEditCorners: _editCorners,
+              onOcr: cropped == null ? null : _runOcr,
               onUse: () => Navigator.of(context).pop(_result),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// Extract text from the cropped scan. The shared OCR sheet runs the
+  /// package's `recognizeText` on-device and renders the transcript; it's
+  /// dark-themed and tinted with this style's accent to match the screen.
+  void _runOcr() {
+    final cropped = _result.croppedImagePath;
+    if (cropped == null) return;
+    showOcrSheet(context, cropped, accent: widget.accent, dark: true);
   }
 
   Future<void> _editCorners() async {
@@ -129,16 +141,19 @@ class _ResultScreenState extends State<ResultScreen> {
                 _result.rawImagePath,
                 q,
               );
-              if (!mounted) return newPath;
-              setState(() {
-                _result = ScanResult(
-                  croppedImagePath: newPath,
-                  rawImagePath: _result.rawImagePath,
-                  detectedQuad: q,
-                  rawImageSize: _result.rawImageSize,
-                );
-              });
-              Navigator.of(context).pop();
+              if (mounted) {
+                setState(() {
+                  _result = ScanResult(
+                    croppedImagePath: newPath,
+                    rawImagePath: _result.rawImagePath,
+                    detectedQuad: q,
+                    rawImageSize: _result.rawImageSize,
+                  );
+                });
+              }
+              // EditCornersScreen owns the pop (in its own _onSave). Popping
+              // here too re-enters the Navigator mid-pop and trips the
+              // `!_debugLocked` assertion.
               return newPath;
             },
           ),
@@ -395,12 +410,14 @@ class _Actions extends StatelessWidget {
     required this.busy,
     required this.onRetake,
     required this.onEditCorners,
+    required this.onOcr,
     required this.onUse,
   });
   final Color accent;
   final bool busy;
   final VoidCallback onRetake;
   final VoidCallback onEditCorners;
+  final VoidCallback? onOcr;
   final VoidCallback onUse;
 
   @override
@@ -416,6 +433,10 @@ class _Actions extends StatelessWidget {
           _Ghost(icon: Icons.refresh, onTap: onRetake),
           const SizedBox(width: 10),
           _Ghost(icon: Icons.crop, onTap: onEditCorners),
+          if (onOcr != null) ...[
+            const SizedBox(width: 10),
+            _Ghost(icon: Icons.text_fields, onTap: busy ? null : onOcr!),
+          ],
           const Spacer(),
           _Primary(accent: accent, onTap: onUse, busy: busy),
         ],
@@ -427,9 +448,10 @@ class _Actions extends StatelessWidget {
 class _Ghost extends StatelessWidget {
   const _Ghost({required this.icon, required this.onTap});
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -444,7 +466,8 @@ class _Ghost extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: _kTextSecondary, size: 16),
+            Icon(icon,
+                color: enabled ? _kTextSecondary : _kTextDim, size: 16),
           ],
         ),
       ),

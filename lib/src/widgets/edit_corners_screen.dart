@@ -10,6 +10,46 @@ typedef CornerHandleBuilder = Widget Function(BuildContext context);
 typedef EditCornersButtonBuilder = Widget Function(
     BuildContext context, VoidCallback onTap, String label);
 
+/// Builds a custom magnifier loupe shown while a corner is dragged.
+///
+/// The returned widget is laid out in a [magnifierSize]×[magnifierSize] box
+/// positioned to dodge the finger; size it to fill that box. Return `null` to
+/// fall back to the bundled loupe for the current drag.
+typedef MagnifierBuilder = Widget? Function(
+    BuildContext context, MagnifierDetails details);
+
+/// Everything needed to render a magnifier loupe for the active corner.
+class MagnifierDetails {
+  const MagnifierDetails({
+    required this.image,
+    required this.imageSize,
+    required this.imagePoint,
+    required this.quad,
+    required this.size,
+    required this.scale,
+  });
+
+  /// The decoded full-resolution source image to sample from.
+  final ui.Image image;
+
+  /// Logical pixel size the [quad] and [imagePoint] coordinates live in. The
+  /// decoded [image] may be a different resolution; map with
+  /// `image.width / imageSize.width` to find source pixels.
+  final Size imageSize;
+
+  /// The active corner's position, in [imageSize] coordinates.
+  final Offset imagePoint;
+
+  /// The current quad, in [imageSize] coordinates.
+  final Quad quad;
+
+  /// Diameter of the loupe box in logical pixels.
+  final double size;
+
+  /// Requested zoom factor.
+  final double scale;
+}
+
 /// Helper screen for letting users adjust the 4 corners of a detected document.
 ///
 /// Layout, handles, lines, and buttons are all overridable via builders.
@@ -35,6 +75,10 @@ class EditCornersScreen extends StatefulWidget {
     this.savingLabel = 'Saving…',
     this.buttonStyle,
     this.buttonTextStyle,
+    this.showMagnifier = true,
+    this.magnifierSize = 112.0,
+    this.magnifierScale = 1.2,
+    this.magnifierBuilder,
   });
 
   /// File path to the raw uncropped image.
@@ -47,8 +91,13 @@ class EditCornersScreen extends StatefulWidget {
   final Size imageSize;
 
   /// Called when the user saves. Receives final quad in raw image pixel coords.
-  /// Implementer typically calls `controller.warpImage(rawPath, finalQuad)`.
-  /// Return the path of the new warped image.
+  /// Implementer typically calls `controller.warpImage(rawPath, finalQuad)`
+  /// and returns the path of the new warped image.
+  ///
+  /// Do **not** pop the route from this callback — [EditCornersScreen] owns
+  /// the pop and dismisses itself with the returned path once `onSave`
+  /// completes. Popping here as well re-enters the Navigator mid-pop and
+  /// trips the framework's `!_debugLocked` assertion.
   final Future<String> Function(Quad finalQuad) onSave;
 
   final VoidCallback? onCancel;
@@ -65,6 +114,20 @@ class EditCornersScreen extends StatefulWidget {
   final ButtonStyle? buttonStyle;
   final TextStyle? buttonTextStyle;
 
+  /// Show a magnifying loupe while a corner is being dragged, so the finger
+  /// doesn't hide the pixel being placed.
+  final bool showMagnifier;
+
+  /// Diameter of the loupe in logical pixels.
+  final double magnifierSize;
+
+  /// How much the region under the corner is zoomed inside the loupe.
+  final double magnifierScale;
+
+  /// Optional override for the loupe widget. When null (the default), a bundled
+  /// loupe is rendered. Return null from the builder to fall back to it.
+  final MagnifierBuilder? magnifierBuilder;
+
   @override
   State<EditCornersScreen> createState() => _EditCornersScreenState();
 }
@@ -73,10 +136,71 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
   late Quad _quad = widget.initialQuad;
   bool _saving = false;
 
+  /// Decoded source image, used to sample full-resolution pixels into the
+  /// loupe. Null until [_decodeImage] completes.
+  ui.Image? _sourceImage;
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageListener;
+
+  /// Image-space position of the corner currently being dragged, and the
+  /// widget-space point of the finger. Both null when no drag is active.
+  Offset? _activeImagePoint;
+  Offset? _activeWidgetPoint;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.showMagnifier) _decodeImage();
+  }
+
+  @override
+  void dispose() {
+    if (_imageStream != null && _imageListener != null) {
+      _imageStream!.removeListener(_imageListener!);
+    }
+    _sourceImage?.dispose();
+    super.dispose();
+  }
+
+  void _decodeImage() {
+    final provider = FileImage(File(widget.imagePath));
+    final stream = provider.resolve(const ImageConfiguration());
+    final listener = ImageStreamListener((info, _) {
+      if (!mounted) {
+        info.image.dispose();
+        return;
+      }
+      setState(() => _sourceImage = info.image);
+    }, onError: (_, __) {
+      // Loupe is a non-critical enhancement; fail silently and let editing
+      // continue without it.
+    });
+    _imageStream = stream;
+    _imageListener = listener;
+    stream.addListener(listener);
+  }
+
+  /// Dismiss the screen without saving. Pops directly (not via maybePop,
+  /// which PopScope's canPop:false would swallow). A no-op while a warp is
+  /// in flight so we don't pop mid-save.
+  void _cancel() {
+    if (_saving) return;
+    if (widget.onCancel != null) {
+      widget.onCancel!();
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
+      // Block the system back gesture from bypassing the cancel/save flow,
+      // but route an intentional system-back into _cancel so it still works.
       canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _cancel();
+      },
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(
@@ -93,8 +217,7 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
           ),
           leading: IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
-            onPressed:
-                widget.onCancel ?? () => Navigator.of(context).maybePop(),
+            onPressed: _cancel,
           ),
         ),
         body: LayoutBuilder(
@@ -143,6 +266,8 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
                   ),
                 ),
                 ..._buildHandles(fit, constraints.biggest),
+                if (widget.showMagnifier)
+                  ..._buildMagnifier(fit, constraints.biggest),
                 Positioned(
                   bottom: 24,
                   left: 16,
@@ -184,6 +309,73 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _clearActiveHandle() {
+    if (_activeImagePoint == null && _activeWidgetPoint == null) return;
+    setState(() {
+      _activeImagePoint = null;
+      _activeWidgetPoint = null;
+    });
+  }
+
+  /// The loupe: a circular window showing the full-resolution region under the
+  /// active corner, zoomed, with a crosshair on the exact point. Positioned to
+  /// dodge the finger — above the handle, flipping below when near the top.
+  List<Widget> _buildMagnifier(_ImageFit fit, Size widgetSize) {
+    final image = _sourceImage;
+    final imagePoint = _activeImagePoint;
+    final widgetPoint = _activeWidgetPoint;
+    if (image == null || imagePoint == null || widgetPoint == null) {
+      return const [];
+    }
+
+    final d = widget.magnifierSize;
+    const gap = 24.0; // space between finger and loupe
+    const margin = 8.0; // keep the loupe on-screen
+
+    // Prefer placing the loupe above the finger; flip below if it would clip
+    // the top of the screen.
+    double top = widgetPoint.dy - gap - d;
+    if (top < margin) top = widgetPoint.dy + gap;
+
+    double left = widgetPoint.dx - d / 2;
+    left = left.clamp(margin, math.max(margin, widgetSize.width - d - margin));
+
+    final custom = widget.magnifierBuilder?.call(
+      context,
+      MagnifierDetails(
+        image: image,
+        imageSize: widget.imageSize,
+        imagePoint: imagePoint,
+        quad: _quad,
+        size: d,
+        scale: widget.magnifierScale,
+      ),
+    );
+
+    final loupe = custom ??
+        CustomPaint(
+          painter: _MagnifierPainter(
+            image: image,
+            imageSize: widget.imageSize,
+            imagePoint: imagePoint,
+            scale: widget.magnifierScale,
+            quad: _quad,
+            lineColor: widget.lineColor,
+            lineWidth: widget.lineWidth,
+          ),
+        );
+
+    return [
+      Positioned(
+        left: left,
+        top: top,
+        width: d,
+        height: d,
+        child: IgnorePointer(child: loupe),
+      ),
+    ];
   }
 
   List<Widget> _buildHandles(_ImageFit fit, Size widgetSize) {
@@ -243,6 +435,13 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
       left: widgetPos.dx - r,
       top: widgetPos.dy - r,
       child: GestureDetector(
+        onPanDown: (_) {
+          if (!widget.showMagnifier) return;
+          setState(() {
+            _activeImagePoint = imagePoint;
+            _activeWidgetPoint = widgetPos;
+          });
+        },
         onPanUpdate: (details) {
           setState(() {
             final newWidgetPos = widgetPos + details.delta;
@@ -252,9 +451,16 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
               newWidgetPos.dy.clamp(
                   fit.dstOffset.dy, fit.dstOffset.dy + fit.dstSize.height),
             );
-            setPoint(fit.widgetToImage(clamped));
+            final newImagePoint = fit.widgetToImage(clamped);
+            setPoint(newImagePoint);
+            if (widget.showMagnifier) {
+              _activeImagePoint = newImagePoint;
+              _activeWidgetPoint = clamped;
+            }
           });
         },
+        onPanEnd: (_) => _clearActiveHandle(),
+        onPanCancel: _clearActiveHandle,
         child: widget.handleBuilder?.call(context) ??
             Container(
               width: r * 2,
@@ -360,4 +566,101 @@ class _CornerLinesPainter extends CustomPainter {
       old.quad != quad ||
       old.lineColor != lineColor ||
       old.surroundColor != surroundColor;
+}
+
+/// Paints the magnifier loupe: a circular, zoomed crop of the full-resolution
+/// source image centered on the active corner, with the quad edges and a
+/// crosshair drawn on top so the user can place the corner precisely.
+class _MagnifierPainter extends CustomPainter {
+  _MagnifierPainter({
+    required this.image,
+    required this.imageSize,
+    required this.imagePoint,
+    required this.scale,
+    required this.quad,
+    required this.lineColor,
+    required this.lineWidth,
+  });
+
+  final ui.Image image;
+
+  /// Logical pixel size the [Quad] coordinates live in. The decoded [image]
+  /// may be a different resolution (e.g. an EXIF-downscaled cache entry), so we
+  /// map quad/point coords into image pixels via this ratio.
+  final Size imageSize;
+
+  /// The corner position, in [imageSize] coordinates.
+  final Offset imagePoint;
+  final double scale;
+  final Quad quad;
+  final Color lineColor;
+  final double lineWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final clip = Path()..addOval(Rect.fromCircle(center: center, radius: size.width / 2));
+    canvas.save();
+    canvas.clipPath(clip);
+    canvas.drawColor(Colors.black, BlendMode.src);
+
+    // Ratio between the decoded image's actual pixels and the quad coordinate
+    // space, so the loupe samples the right region regardless of cache scaling.
+    final pxRatio = image.width / imageSize.width;
+
+    // loupe-space = center + (imageCoord - imagePoint) * scale
+    // Invert to find which source rect fills the loupe.
+    final halfImageCoords = (size.width / 2) / scale;
+    final src = Rect.fromCenter(
+      center: Offset(imagePoint.dx * pxRatio, imagePoint.dy * pxRatio),
+      width: halfImageCoords * 2 * pxRatio,
+      height: halfImageCoords * 2 * pxRatio,
+    );
+    final dst = Rect.fromLTWH(0, 0, size.width, size.height);
+    canvas.drawImageRect(
+      image,
+      src,
+      dst,
+      Paint()..filterQuality = FilterQuality.high,
+    );
+
+    // Quad edges, mapped from image-space into loupe-space.
+    Offset toLoupe(Offset p) => center + (p - imagePoint) * scale;
+    final tl = toLoupe(quad.topLeft);
+    final tr = toLoupe(quad.topRight);
+    final br = toLoupe(quad.bottomRight);
+    final bl = toLoupe(quad.bottomLeft);
+    final edges = Path()
+      ..moveTo(tl.dx, tl.dy)
+      ..lineTo(tr.dx, tr.dy)
+      ..lineTo(br.dx, br.dy)
+      ..lineTo(bl.dx, bl.dy)
+      ..close();
+    canvas.drawPath(
+      edges,
+      Paint()
+        ..color = lineColor
+        ..strokeWidth = lineWidth
+        ..style = PaintingStyle.stroke,
+    );
+
+    canvas.restore();
+
+    // Rim.
+    canvas.drawCircle(
+      center,
+      size.width / 2 - 1,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.9)
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MagnifierPainter old) =>
+      old.image != image ||
+      old.imagePoint != imagePoint ||
+      old.scale != scale ||
+      old.quad != quad;
 }

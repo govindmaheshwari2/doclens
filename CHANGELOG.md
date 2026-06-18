@@ -1,3 +1,58 @@
+## 0.0.6
+
+**Sharpness-gated auto-capture**
+
+- Auto-capture now waits for the frame to be in focus before firing, not
+  just geometrically aligned, so it no longer shoots a well-framed but
+  blurry page. When a document aligns, the controller locks focus on the
+  quad's centroid and holds the shutter until sharpness clears threshold.
+  The new `DetectionStatus.focusing` reports this state so the UI can show
+  a "focusing, hold steady" hint, and the drop-in scanner already does.
+- Focus is judged from a per-frame variance-of-Laplacian sharpness value
+  via the new `SharpnessTracker`. A fixed threshold doesn't work here,
+  since the numbers swing with scene and distance, so a frame must clear
+  an absolute floor and then plateau near the top of a short rolling
+  window. The native side (iOS and Android `SharpnessEstimator`) measures
+  the in-quad sharpness per frame and reports it on the new
+  `DetectionEvent.sharpness` field; `null` means "no signal" and never
+  blocks capture.
+- Configurable via `ScannerConfig`: `enableSharpnessGate` (default `true`;
+  set `false` for the old geometry-only behavior), `autoCaptureFocusTimeout`
+  (default 2500 ms, after which capture fires anyway so nobody gets stuck),
+  and `sharpnessFloor` (default `8.0`). Losing alignment resets the focus
+  episode so the next alignment re-focuses.
+
+**Edit-corners magnifier loupe**
+
+- `EditCornersScreen` now shows a magnifying loupe while a corner is
+  dragged, so the finger no longer hides the point being placed. Configurable
+  via `showMagnifier` (default `true`), `magnifierSize`, and
+  `magnifierScale`, with an optional `magnifierBuilder` to supply a custom
+  loupe widget (return `null` to fall back to the bundled one).
+
+- New `ScanResult.copyWith` for persisting an updated `croppedImagePath`
+  (e.g. after a manual rotate or re-warp) back into a result you're holding.
+
+**On-device OCR — new `recognizeText` API**
+
+- New **`recognizeText`** runs full on-device text recognition over any image
+  on disk (typically a capture's `croppedImagePath`) and returns the transcript
+  plus structured geometry. Available on `DoclensController.recognizeText(path)`
+  and directly on `DoclensPlatform.instance.recognizeText(imagePath: …)` — it is
+  a pure file operation, so it needs no camera session or `initialize()` call.
+- New result types: **`OcrResult`** (`text`, `blocks`, flattened `lines`,
+  `imageSize`), **`OcrBlock`** (`text`, pixel-space `boundingBox`, `lines`,
+  and on Android a `recognizedLanguage`), and **`OcrLine`** (`text`,
+  `boundingBox`, `confidence`). All bounding boxes are in the recognised image's
+  pixel coordinates (origin top-left). A blank/graphical page (or an
+  unavailable recogniser) yields an empty `OcrResult` rather than an error.
+- Reuses the OS text APIs already present on each platform — Apple Vision's
+  `VNRecognizeTextRequest` (run at the `.accurate` level) on iOS and
+  Play-services ML Kit text recognition on Android — so **no model is bundled**
+  and **no new dependency is added**; the Android model is delivered on demand
+  by Google Play services. OCR was previously listed as a non-goal; it is now
+  supported.
+
 ## 0.0.5
 
 **Multi-page / batch scanning — new `DoclensMultiScreen`**

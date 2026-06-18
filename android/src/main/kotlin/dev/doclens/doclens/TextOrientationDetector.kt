@@ -37,8 +37,7 @@ object TextOrientationDetector {
     fun bestClockwiseTurns(bitmap: Bitmap): Int {
         val small = downscale(bitmap, 1000)
         try {
-            var bestTurns = 0
-            var bestScore = 0.0
+            val scores = DoubleArray(4)
             // `InputImage.fromBitmap(bm, rotationDegrees)` follows the CameraX
             // convention: `rotationDegrees` is the *clockwise* rotation that
             // brings the buffer upright, which ML Kit applies before
@@ -57,19 +56,38 @@ object TextOrientationDetector {
                     // timeouts on the capture path — leave the crop as-is.
                     return 0
                 }
-                val score = scoreOf(text)
-                if (score > bestScore) {
-                    bestScore = score
-                    bestTurns = deg / 90
+                scores[deg / 90] = scoreOf(text)
+            }
+
+            var bestTurns = 0
+            var bestScore = scores[0]
+            for (t in 1..3) {
+                if (scores[t] > bestScore) {
+                    bestScore = scores[t]
+                    bestTurns = t
                 }
             }
-            // Require a meaningful amount of confident text before trusting a
-            // rotation — otherwise speckle on a near-blank page could spin it.
-            return if (bestScore >= 1.0) bestTurns else 0
+
+            // Bias toward the current orientation. Upside-down (and sideways)
+            // Latin text still "reads" as low-confidence garbage, so a flipped
+            // crop can narrowly outscore the upright one. Only rotate when a
+            // hypothesis beats the as-is (0°) score by a clear margin, and
+            // clears an absolute floor — otherwise leave the crop untouched
+            // (the common false-180° flip that left the image upside-down
+            // while OCR, which detects orientation independently, read fine).
+            if (bestTurns == 0) return 0
+            return if (bestScore >= 1.0 && bestScore >= scores[0] * MIN_ROTATE_MARGIN) {
+                bestTurns
+            } else {
+                0
+            }
         } finally {
             if (small !== bitmap) small.recycle()
         }
     }
+
+    /** A non-zero rotation must beat the as-is score by this factor to win. */
+    private const val MIN_ROTATE_MARGIN = 1.30
 
     private fun scoreOf(text: Text): Double {
         var score = 0.0

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../controller.dart';
 import '../models.dart';
+import '../ocr.dart';
 import '../quad.dart';
 import 'doclens_view.dart';
 import 'edit_corners_screen.dart';
@@ -80,6 +81,22 @@ void _discardPageFiles(ScanResult page) {
   if (page.rawImagePath != page.croppedImagePath) {
     _deleteFileQuietly(page.rawImagePath);
   }
+}
+
+/// Pick the photo the review screen should display for [result].
+///
+/// Prefers the dewarped crop ([ScanResult.croppedImagePath]) but falls back
+/// to the raw capture ([ScanResult.rawImagePath]) when no crop was produced
+/// and the warp didn't actually fail. A manual shutter tap with no document
+/// quad detected yields exactly this — a valid raw path, null crop, and no
+/// [ScanResult.warpError] — so without the fallback the user would see the
+/// empty placeholder instead of their photo. Returns `null` only on a genuine
+/// warp failure, where the review screen shows its "Could not crop" empty
+/// state.
+String? reviewDisplayPath(ScanResult result) {
+  if (result.croppedImagePath != null) return result.croppedImagePath;
+  if (result.warpError != null) return null;
+  return result.rawImagePath;
 }
 
 /// Drop-in document scanner screen. Owns its own controller, runs the live
@@ -441,10 +458,14 @@ class DoclensScreen extends StatefulWidget {
   /// when [reviewBuilder] is set.
   final DoclensReviewBuilder? reviewHeaderBuilder;
 
-  /// Replaces only the **cropped-image preview** on the default review
-  /// screen. Receives a [DoclensReviewContext] whose
-  /// `result.croppedImagePath` is guaranteed non-null when this builder
-  /// is invoked. Ignored when [reviewBuilder] is set.
+  /// Replaces only the **image preview** on the default review screen.
+  /// Invoked whenever a displayable photo exists — the dewarped crop
+  /// (`result.croppedImagePath`) when present, otherwise the raw capture
+  /// (`result.rawImagePath`) when the warp was skipped (e.g. a manual
+  /// shutter tap with no detected quad). Render
+  /// `result.croppedImagePath ?? result.rawImagePath`. The empty builder
+  /// runs instead only on a genuine warp failure (`result.warpError`).
+  /// Ignored when [reviewBuilder] is set.
   final DoclensReviewBuilder? reviewImageBuilder;
 
   /// Replaces only the **empty / warp-error placeholder** on the default
@@ -1038,6 +1059,8 @@ class _DoclensScreenState extends State<DoclensScreen> {
         return 'Hold the camera flat';
       case DetectionStatus.aligned:
         return 'Hold still';
+      case DetectionStatus.focusing:
+        return 'Focusing — hold steady';
       case DetectionStatus.confirming:
         return 'Capturing';
     }
@@ -1295,13 +1318,17 @@ class DoclensReviewScreen extends StatefulWidget {
   /// a serif title with a hairline back chip.
   final DoclensReviewBuilder? headerBuilder;
 
-  /// Replaces the cropped-image preview. Default renders
-  /// `result.croppedImagePath` with `BoxFit.scaleDown` inside a framed
-  /// surface, falling back to [emptyBuilder] when the path is `null`.
+  /// Replaces the image preview. Default renders
+  /// `result.croppedImagePath ?? result.rawImagePath` with
+  /// `BoxFit.scaleDown` inside a framed surface, falling back to
+  /// [emptyBuilder] only when the warp genuinely failed
+  /// (`result.warpError != null`).
   final DoclensReviewBuilder? imageBuilder;
 
-  /// Replaces the placeholder shown when the warp failed or produced no
-  /// cropped output. Default renders a "Could not crop" message.
+  /// Replaces the placeholder shown when the perspective warp failed
+  /// (`result.warpError != null`). Default renders a "Could not crop"
+  /// message. Not shown for an un-cropped-but-valid raw capture (those
+  /// fall through to [imageBuilder] with the raw photo).
   final DoclensReviewBuilder? emptyBuilder;
 
   /// Replaces the bottom action row (Retake / Edit corners / Use).
@@ -1318,17 +1345,23 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
   late ScanResult _result = widget.result;
 
   Future<void> _editCorners() async {
+    // The edited quad must flow back into _result so a second edit re-seeds
+    // EditCornersScreen from the user's last positions, not the original
+    // detected corners. Capture it from the onSave closure.
+    Quad? editedQuad;
     final newPath = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
         builder: (_) => EditCornersScreen(
           imagePath: _result.rawImagePath,
           initialQuad: _result.detectedQuad,
           imageSize: _result.rawImageSize,
-          onSave: (q) async {
-            final out =
-                await widget.controller.warpImage(_result.rawImagePath, q);
-            if (mounted) Navigator.of(context).pop(out);
-            return out;
+          // Only warp and return the path. EditCornersScreen owns the pop
+          // (in its own _onSave). Popping here too re-enters the Navigator
+          // while the first pop is still mutating the route stack, tripping
+          // the `!_debugLocked` assertion.
+          onSave: (q) {
+            editedQuad = q;
+            return widget.controller.warpImage(_result.rawImagePath, q);
           },
         ),
       ),
@@ -1339,7 +1372,7 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
         _result = ScanResult(
           croppedImagePath: newPath,
           rawImagePath: _result.rawImagePath,
-          detectedQuad: _result.detectedQuad,
+          detectedQuad: editedQuad ?? _result.detectedQuad,
           rawImageSize: _result.rawImageSize,
         );
       });
@@ -1361,7 +1394,7 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final path = _result.croppedImagePath;
+    final path = reviewDisplayPath(_result);
     final review = DoclensReviewContext(
       result: _result,
       accent: widget.accent,
@@ -1390,7 +1423,11 @@ class _DoclensReviewScreenState extends State<DoclensReviewScreen> {
               accent: review.accent,
             ))
         : (widget.imageBuilder?.call(context, review) ??
-            _ReviewImage(path: path, accent: review.accent));
+            _ReviewImage(
+              path: path,
+              accent: review.accent,
+              controller: widget.controller,
+            ));
     final actions = widget.actionsBuilder?.call(context, review) ??
         _ReviewActions(
           accent: review.accent,
@@ -1455,17 +1492,23 @@ class _CustomReviewHostState extends State<_CustomReviewHost> {
   late ScanResult _result = widget.result;
 
   Future<void> _editCorners() async {
+    // The edited quad must flow back into _result so a second edit re-seeds
+    // EditCornersScreen from the user's last positions, not the original
+    // detected corners. Capture it from the onSave closure.
+    Quad? editedQuad;
     final newPath = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
         builder: (_) => EditCornersScreen(
           imagePath: _result.rawImagePath,
           initialQuad: _result.detectedQuad,
           imageSize: _result.rawImageSize,
-          onSave: (q) async {
-            final out =
-                await widget.controller.warpImage(_result.rawImagePath, q);
-            if (mounted) Navigator.of(context).pop(out);
-            return out;
+          // Only warp and return the path. EditCornersScreen owns the pop
+          // (in its own _onSave). Popping here too re-enters the Navigator
+          // while the first pop is still mutating the route stack, tripping
+          // the `!_debugLocked` assertion.
+          onSave: (q) {
+            editedQuad = q;
+            return widget.controller.warpImage(_result.rawImagePath, q);
           },
         ),
       ),
@@ -1476,7 +1519,7 @@ class _CustomReviewHostState extends State<_CustomReviewHost> {
         _result = ScanResult(
           croppedImagePath: newPath,
           rawImagePath: _result.rawImagePath,
-          detectedQuad: _result.detectedQuad,
+          detectedQuad: editedQuad ?? _result.detectedQuad,
           rawImageSize: _result.rawImageSize,
         );
       });
@@ -1659,6 +1702,7 @@ class _StatusReadout extends StatelessWidget {
       case DetectionStatus.confirming:
         return accent;
       case DetectionStatus.aligned:
+      case DetectionStatus.focusing:
         return accent;
       case DetectionStatus.tilted:
       case DetectionStatus.tooClose:
@@ -1833,6 +1877,7 @@ class _BottomShutterBand extends StatelessWidget {
                       : const SizedBox.shrink(),
                 ),
               ),
+              const SizedBox(width: 16),
               if (atPageLimit)
                 Opacity(
                   opacity: 0.4,
@@ -1840,12 +1885,12 @@ class _BottomShutterBand extends StatelessWidget {
                 )
               else
                 shutter,
+              const SizedBox(width: 16),
               Expanded(
                 child: Align(
                   alignment: Alignment.centerRight,
                   child: pages != null
                       ? _DoneButton(
-                          label: doneLabel,
                           accent: accent,
                           enabled: hasPages,
                           onTap: onDone,
@@ -1985,12 +2030,10 @@ class _PageCountChip extends StatelessWidget {
 
 class _DoneButton extends StatelessWidget {
   const _DoneButton({
-    required this.label,
     required this.accent,
     required this.enabled,
     required this.onTap,
   });
-  final String label;
   final Color accent;
   final bool enabled;
   final VoidCallback? onTap;
@@ -2003,23 +2046,13 @@ class _DoneButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: enabled ? onTap : null,
         child: Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          height: 52,
+          width: 52,
           decoration: BoxDecoration(
             color: accent,
-            borderRadius: BorderRadius.circular(10),
+            shape: BoxShape.circle,
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: _mono(
-                size: 13,
-                color: _kBgInk,
-                weight: FontWeight.w700,
-                letterSpacing: 0.0,
-              ),
-            ),
-          ),
+          child: const Icon(Icons.check, color: _kBgInk, size: 26),
         ),
       ),
     );
@@ -2156,13 +2189,70 @@ class _ReviewHeader extends StatelessWidget {
   }
 }
 
-class _ReviewImage extends StatelessWidget {
-  const _ReviewImage({required this.path, required this.accent});
+class _ReviewImage extends StatefulWidget {
+  const _ReviewImage({
+    required this.path,
+    required this.accent,
+    required this.controller,
+  });
   final String path;
   final Color accent;
+  final DoclensController controller;
+
+  @override
+  State<_ReviewImage> createState() => _ReviewImageState();
+}
+
+class _ReviewImageState extends State<_ReviewImage> {
+  bool _showOcr = false;
+  bool _ocrLoading = false;
+
+  /// OCR result for the currently displayed [widget.path]. Recognition runs
+  /// lazily on first toggle-on and is cached; it's invalidated when the path
+  /// changes (e.g. after edit-corners produces a new crop).
+  OcrResult? _ocr;
+  String? _ocrPath;
+
+  @override
+  void didUpdateWidget(_ReviewImage old) {
+    super.didUpdateWidget(old);
+    if (old.path != widget.path) {
+      // The crop changed — drop stale boxes and re-run if the overlay is on.
+      _ocr = null;
+      _ocrPath = null;
+      if (_showOcr) _runOcr();
+    }
+  }
+
+  Future<void> _toggle() async {
+    if (!_showOcr) {
+      setState(() => _showOcr = true);
+      if (_ocrPath != widget.path) await _runOcr();
+    } else {
+      setState(() => _showOcr = false);
+    }
+  }
+
+  Future<void> _runOcr() async {
+    final path = widget.path;
+    setState(() => _ocrLoading = true);
+    OcrResult? result;
+    try {
+      result = await widget.controller.recognizeText(path);
+    } catch (_) {
+      result = null;
+    }
+    if (!mounted || path != widget.path) return;
+    setState(() {
+      _ocr = result;
+      _ocrPath = path;
+      _ocrLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final accent = widget.accent;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       child: LayoutBuilder(
@@ -2183,10 +2273,28 @@ class _ReviewImage extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: Center(
-                    child: Image.file(
-                      File(path),
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.center,
+                    child: Stack(
+                      children: [
+                        Image.file(
+                          File(widget.path),
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.center,
+                        ),
+                        // The overlay is sized to the same box the Image gets
+                        // (Center collapses the Stack to the child's size), so
+                        // the painter can map image pixels onto it directly.
+                        if (_showOcr && _ocr != null && _ocr!.isNotEmpty)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: CustomPaint(
+                                painter: _OcrOverlayPainter(
+                                  ocr: _ocr!,
+                                  accent: accent,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -2200,12 +2308,151 @@ class _ReviewImage extends StatelessWidget {
                   ),
                 ),
               ),
+              // Floating toggle chip — flips the recognised-text overlay.
+              Positioned(
+                top: 18,
+                right: 18,
+                child: _OcrToggleChip(
+                  active: _showOcr,
+                  loading: _ocrLoading,
+                  accent: accent,
+                  onTap: _toggle,
+                ),
+              ),
             ],
           );
         },
       ),
     );
   }
+}
+
+/// Small monochrome pill that toggles the OCR overlay on the review image.
+class _OcrToggleChip extends StatelessWidget {
+  const _OcrToggleChip({
+    required this.active,
+    required this.loading,
+    required this.accent,
+    required this.onTap,
+  });
+  final bool active;
+  final bool loading;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = active ? _kBgInk : _kTextPrimary;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: loading ? null : onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: active ? accent : _kSurfaceHi.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: _kBorderSoft),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (loading)
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    valueColor: AlwaysStoppedAnimation<Color>(fg),
+                  ),
+                )
+              else
+                Icon(
+                  active ? Icons.text_fields : Icons.text_fields_outlined,
+                  size: 13,
+                  color: fg,
+                ),
+              const SizedBox(width: 6),
+              Text('OCR', style: _mono(size: 10, color: fg, weight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Paints OCR line boxes and their recognised text over the displayed image.
+///
+/// [ocr] boxes are in source-image pixels; the painter's [size] is the
+/// rendered image rect (the `Center`/`scaleDown` `Image` collapses the Stack
+/// to exactly the displayed image bounds), so a single uniform scale maps
+/// image space onto the canvas.
+class _OcrOverlayPainter extends CustomPainter {
+  _OcrOverlayPainter({required this.ocr, required this.accent});
+  final OcrResult ocr;
+  final Color accent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final src = ocr.imageSize;
+    if (src.width <= 0 || src.height <= 0 || size.isEmpty) return;
+    final sx = size.width / src.width;
+    final sy = size.height / src.height;
+
+    final boxFill = Paint()..color = accent.withValues(alpha: 0.18);
+    final boxStroke = Paint()
+      ..color = accent.withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    for (final line in ocr.lines) {
+      final b = line.boundingBox;
+      final r = Rect.fromLTRB(b.left * sx, b.top * sy, b.right * sx, b.bottom * sy);
+      if (r.isEmpty) continue;
+      final rr = RRect.fromRectAndRadius(r, const Radius.circular(2));
+      canvas.drawRRect(rr, boxFill);
+      canvas.drawRRect(rr, boxStroke);
+      if (line.text.trim().isEmpty) continue;
+      _paintLabel(canvas, r, line.text);
+    }
+  }
+
+  /// Draw the recognised text scaled down so the whole line fits inside its
+  /// box — start from the box height and shrink the font until the text's
+  /// natural width no longer overflows the box width.
+  void _paintLabel(Canvas canvas, Rect box, String text) {
+    TextPainter build(double fontSize) => TextPainter(
+          text: TextSpan(
+            text: text,
+            style: TextStyle(
+              color: _kBgInk,
+              fontSize: fontSize,
+              height: 1.0,
+              fontWeight: FontWeight.w600,
+              backgroundColor: accent.withValues(alpha: 0.92),
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout();
+
+    var fontSize = (box.height * 0.72).clamp(6.0, 40.0);
+    var tp = build(fontSize);
+    // Measured at unconstrained width, so width overflow means we must shrink.
+    if (tp.width > box.width && box.width > 0) {
+      fontSize = (fontSize * box.width / tp.width).clamp(6.0, 40.0);
+      tp = build(fontSize);
+    }
+    final dx = box.left + (box.width - tp.width) / 2;
+    final dy = box.top + (box.height - tp.height) / 2;
+    tp.paint(canvas, Offset(dx, dy));
+  }
+
+  @override
+  bool shouldRepaint(covariant _OcrOverlayPainter old) =>
+      old.ocr != ocr || old.accent != accent;
 }
 
 class _CornerFramePainter extends CustomPainter {
@@ -2656,11 +2903,28 @@ class _GalleryActions extends StatelessWidget {
       child: Row(
         children: [
           const Spacer(),
-          _DoneButton(
-            label: doneLabel,
-            accent: accent,
-            enabled: true,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: onDone,
+            child: Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(
+                  doneLabel,
+                  style: _mono(
+                    size: 13,
+                    color: _kBgInk,
+                    weight: FontWeight.w700,
+                    letterSpacing: 0.0,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -2709,11 +2973,28 @@ class _DiscardDialog extends StatelessWidget {
                   onTap: () => Navigator.of(context).pop(false),
                 ),
                 const SizedBox(width: 10),
-                _DoneButton(
-                  label: 'Discard',
-                  accent: accent,
-                  enabled: true,
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: () => Navigator.of(context).pop(true),
+                  child: Container(
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Discard',
+                        style: _mono(
+                          size: 13,
+                          color: _kBgInk,
+                          weight: FontWeight.w700,
+                          letterSpacing: 0.0,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -2744,6 +3025,7 @@ class _ReticleOverlay extends StatelessWidget {
       case DetectionStatus.confirming:
         return accent;
       case DetectionStatus.aligned:
+      case DetectionStatus.focusing:
         return accent;
       case DetectionStatus.tilted:
       case DetectionStatus.tooClose:

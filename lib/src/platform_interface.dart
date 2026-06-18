@@ -4,6 +4,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'method_channel_platform.dart';
 import 'models.dart';
+import 'ocr.dart';
 import 'quad.dart';
 
 /// Raw event from the native detection stream.
@@ -13,10 +14,20 @@ import 'quad.dart';
 /// when it learns the camera buffer dimensions). Consumers should treat
 /// `previewSize` events as info-only and not clear the current quad.
 class DetectionEvent {
-  const DetectionEvent({this.quad, this.lowLight = false, this.previewSize});
+  const DetectionEvent({
+    this.quad,
+    this.lowLight = false,
+    this.previewSize,
+    this.sharpness,
+  });
   final Quad? quad;
   final bool lowLight;
   final Size? previewSize;
+
+  /// Raw variance-of-Laplacian sharpness for this frame (in-quad when a
+  /// quad is present, whole-frame otherwise). `null` when the native side
+  /// does not provide it — consumers treat null as "no signal".
+  final double? sharpness;
 
   bool get isPreviewSizeOnly => previewSize != null && quad == null;
 }
@@ -74,6 +85,20 @@ abstract class DoclensPlatform extends PlatformInterface {
 
   /// Stream of detection frames. Null quad means "nothing detected this frame".
   Stream<DetectionEvent> detectionEvents();
+
+  /// Recognise text (OCR) in the image at [imagePath] entirely on-device.
+  ///
+  /// Uses the OS text APIs already present on each platform — Apple Vision's
+  /// `VNRecognizeTextRequest` on iOS and Play-services ML Kit text recognition
+  /// on Android — so no model is bundled. Works on any JPEG/PNG on disk
+  /// (typically a [ScanResult.croppedImagePath]); no camera session or
+  /// `initialize()` call is required.
+  ///
+  /// Returns an [OcrResult] with the full text plus per-block / per-line
+  /// bounding boxes and confidence. When nothing is recognised (blank or
+  /// graphical page, or the recogniser is unavailable) the result is empty
+  /// ([OcrResult.isEmpty]) rather than an error.
+  Future<OcrResult> recognizeText({required String imagePath});
 
   /// Present the OS-native document scanner UI (VisionKit on iOS,
   /// ML Kit Document Scanner on Android). Returns the cropped page image

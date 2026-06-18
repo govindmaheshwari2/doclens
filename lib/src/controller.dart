@@ -3,11 +3,12 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
-import 'method_channel_platform.dart';
 import 'models.dart';
+import 'ocr.dart';
 import 'platform_interface.dart';
 import 'quad.dart';
 import 'quad_smoother.dart';
+import 'sharpness_tracker.dart';
 import 'stability_tracker.dart';
 import 'status_classifier.dart';
 
@@ -20,19 +21,21 @@ class DoclensController extends ChangeNotifier {
   DoclensController({ScannerConfig config = const ScannerConfig()})
       : _config = config,
         _flashMode = config.initialFlashMode {
-    if (DoclensPlatform.instance is! MethodChannelDoclens) {
-      DoclensPlatform.instance = MethodChannelDoclens();
-    }
+    // `DoclensPlatform.instance` already defaults to a real
+    // `MethodChannelDoclens`, so we don't force one here — tests inject a
+    // fake platform before constructing the controller.
     _stability = StabilityTracker(
       cornerThreshold: _config.autoCaptureCornerThreshold,
       stabilityDuration: _config.autoCaptureStabilityDuration,
     );
+    _sharpness = SharpnessTracker(floor: _config.sharpnessFloor);
   }
 
   final ScannerConfig _config;
   ScannerConfig get config => _config;
 
   late final StabilityTracker _stability;
+  late final SharpnessTracker _sharpness;
   late final QuadSmoother? _smoother = _config.enableQuadSmoothing
       ? QuadSmoother(windowSize: _config.quadSmoothingWindow)
       : null;
@@ -84,6 +87,12 @@ class DoclensController extends ChangeNotifier {
   DateTime? _autoCaptureCooldownUntil;
   Timer? _confirmationTimer;
   bool _inConfirmation = false;
+
+  /// True once we've requested a focus-lock for the current alignment
+  /// episode, so we don't re-fire `focusAt` every frame.
+  bool _focusRequested = false;
+  Timer? _focusDeadlineTimer;
+  bool _focusDeadlineElapsed = false;
 
   /// Start the native session. Must be called before mounting the widget.
   Future<void> initialize() async {
@@ -143,26 +152,66 @@ class DoclensController extends ChangeNotifier {
       final geometryReady =
           stable && smoothed != null && classified == DetectionStatus.aligned;
 
+      // Focus gate. When disabled, focus is always considered ready so the
+      // behavior is identical to geometry-only auto-capture.
+      bool focusReady = true;
+      if (_config.enableSharpnessGate && geometryReady) {
+        if (!_focusRequested) {
+          // First aligned frame of this episode: drive AF onto the document
+          // (best-effort) and start the capture-anyway deadline.
+          _focusRequested = true;
+          _focusDeadlineElapsed = false;
+          unawaited(
+            DoclensPlatform.instance.focusAt(smoothed.centroid).catchError(
+                  (Object _) {},
+                ),
+          );
+          _focusDeadlineTimer?.cancel();
+          _focusDeadlineTimer = Timer(_config.autoCaptureFocusTimeout, () {
+            _focusDeadlineElapsed = true;
+          });
+        }
+        final sharpReady = _sharpness.update(event.sharpness);
+        focusReady = sharpReady || _focusDeadlineElapsed;
+        if (!focusReady && _config.enableStabilityStatus) {
+          // Aligned but holding for focus.
+          _emitStatus(DetectionStatus.focusing);
+        }
+      }
+
+      final ready = geometryReady && focusReady;
+
       _log(
-        'autoCapture gate: rawQuad=${event.quad != null} '
-        'smoothed=${smoothed != null} stable=$stable '
-        'classified=${classified.name} status=${_status.name} '
-        'inConfirmation=$_inConfirmation capturing=$_capturing '
-        'cooldown=${_inAutoCaptureCooldown()} → ready=$geometryReady',
+        'autoCapture gate: stable=$stable classified=${classified.name} '
+        'geometryReady=$geometryReady focusReady=$focusReady '
+        'sharpness=${event.sharpness} focusDeadline=$_focusDeadlineElapsed '
+        'inConfirmation=$_inConfirmation → ready=$ready',
       );
 
-      if (geometryReady) {
+      if (ready) {
         if (_config.enableAutoCaptureConfirmation) {
           _startConfirmationPhase();
         } else {
           unawaited(_autoCapture());
         }
-      } else if (_inConfirmation) {
-        // Confirmation in flight but geometry no longer ready — abort.
-        _log('autoCapture: confirmation cancelled — geometry no longer ready');
-        _cancelConfirmation();
+      } else if (!geometryReady) {
+        // Lost alignment — reset the focus episode so the next alignment
+        // re-focuses, and abort any confirmation in flight.
+        _resetFocusEpisode();
+        if (_inConfirmation) {
+          _log('autoCapture: confirmation cancelled — geometry no longer ready');
+          _cancelConfirmation();
+        }
       }
     }
+  }
+
+  void _resetFocusEpisode() {
+    _focusRequested = false;
+    _focusDeadlineElapsed = false;
+    _focusDeadlineTimer?.cancel();
+    _focusDeadlineTimer = null;
+    _sharpness.reset();
   }
 
   void _log(String message) {
@@ -229,6 +278,7 @@ class DoclensController extends ChangeNotifier {
     } finally {
       _capturing = false;
       _stability.reset();
+      _resetFocusEpisode();
       // Pause auto-capture briefly so we don't immediately re-fire on the
       // same scene (e.g. after a warp failure or while the user is still
       // looking at the result screen).
@@ -303,6 +353,24 @@ class DoclensController extends ChangeNotifier {
       imagePath: imagePath,
       quarterTurns: quarterTurns,
     );
+  }
+
+  /// Recognise text (OCR) in the image at [imagePath] on-device, returning an
+  /// [OcrResult] with the full text plus per-block / per-line bounding boxes
+  /// and confidence.
+  ///
+  /// Typically called on a capture's [ScanResult.croppedImagePath] (run
+  /// [ScannerConfig.imageEnhancement] of `blackAndWhite` first for the cleanest
+  /// OCR on faint print). It is a pure file operation — needs no camera, so it
+  /// works whether or not [initialize] has been called. (You can also call
+  /// `DoclensPlatform.instance.recognizeText(...)` directly without a
+  /// controller.)
+  ///
+  /// An empty result ([OcrResult.isEmpty]) means no confident text was found —
+  /// it is not an error.
+  Future<OcrResult> recognizeText(String imagePath) {
+    _ensureNotDisposed();
+    return DoclensPlatform.instance.recognizeText(imagePath: imagePath);
   }
 
   Future<void> setFlashMode(FlashMode mode) async {
@@ -381,6 +449,8 @@ class DoclensController extends ChangeNotifier {
     _disposed = true;
     _confirmationTimer?.cancel();
     _confirmationTimer = null;
+    _focusDeadlineTimer?.cancel();
+    _focusDeadlineTimer = null;
     await _eventSub?.cancel();
     if (_initialized) {
       try {

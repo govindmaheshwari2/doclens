@@ -183,9 +183,27 @@ class ScannerSession(
             lastQuad = rotated
 
             val lowLight = config.enableLowLightDetection && LumaEstimator.isLowLight(luma)
+
+            // Score sharpness over the detected quad's bbox. Use the
+            // pre-rotation `quad` (same coordinate space as `luma`), not
+            // `rotated` which is in displayed space.
+            val sharpness = if (quad != null) {
+                val xs = listOf(quad.topLeft.x, quad.topRight.x,
+                                quad.bottomRight.x, quad.bottomLeft.x)
+                val ys = listOf(quad.topLeft.y, quad.topRight.y,
+                                quad.bottomRight.y, quad.bottomLeft.y)
+                SharpnessEstimator.sharpness(
+                    luma, width, height,
+                    xs.min(), ys.min(), xs.max(), ys.max(),
+                )
+            } else {
+                SharpnessEstimator.sharpness(luma, width, height)
+            }
+
             eventSink(mapOf(
                 "quad" to rotated?.toMap(),
                 "lowLight" to lowLight,
+                "sharpness" to sharpness,
             ))
         } finally {
             proxy.close()
