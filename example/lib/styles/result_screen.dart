@@ -141,16 +141,19 @@ class _ResultScreenState extends State<ResultScreen> {
                 _result.rawImagePath,
                 q,
               );
-              if (!mounted) return newPath;
-              setState(() {
-                _result = ScanResult(
-                  croppedImagePath: newPath,
-                  rawImagePath: _result.rawImagePath,
-                  detectedQuad: q,
-                  rawImageSize: _result.rawImageSize,
-                );
-              });
-              Navigator.of(context).pop();
+              if (mounted) {
+                setState(() {
+                  _result = ScanResult(
+                    croppedImagePath: newPath,
+                    rawImagePath: _result.rawImagePath,
+                    detectedQuad: q,
+                    rawImageSize: _result.rawImageSize,
+                  );
+                });
+              }
+              // EditCornersScreen owns the pop (in its own _onSave). Popping
+              // here too re-enters the Navigator mid-pop and trips the
+              // `!_debugLocked` assertion.
               return newPath;
             },
           ),

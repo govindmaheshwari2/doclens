@@ -143,7 +143,7 @@ class _OcrSheetState extends State<_OcrSheet> {
     } else if (!hasText) {
       eyebrow = 'NO TEXT FOUND';
     } else {
-      final n = ocr!.lines.length;
+      final n = ocr.lines.length;
       eyebrow = '$n LINE${n == 1 ? '' : 'S'} RECOGNISED';
     }
 
@@ -194,7 +194,7 @@ class _OcrSheetState extends State<_OcrSheet> {
                     ],
                   ),
                 ),
-                if (hasText) _CopyButton(text: ocr!.text, palette: p),
+                if (hasText) _CopyButton(text: ocr.text, palette: p),
               ],
             ),
             const SizedBox(height: 14),

@@ -138,6 +138,7 @@ class MethodChannelDoclens extends DoclensPlatform {
         quad: quadMap == null ? null : Quad.fromMap(quadMap as Map),
         lowLight: (map['lowLight'] as bool?) ?? false,
         previewSize: previewSize,
+        sharpness: (map['sharpness'] as num?)?.toDouble(),
       );
     });
   }

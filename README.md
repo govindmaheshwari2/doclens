@@ -198,6 +198,24 @@ Move the camera during the confirmation window to abort. All thresholds
 are knobs on `ScannerConfig` and surface as top-level parameters on
 `DoclensScreen.scan(...)`.
 
+### Sharpness gate — no blurry captures
+
+When `ScannerConfig.enableSharpnessGate` is `true` (the default),
+auto-capture also waits for the frame to be in focus before firing, not
+just geometrically aligned. Once the document aligns, the controller locks
+focus on the quad's centroid and holds the shutter, and status reports
+`DetectionStatus.focusing` so the default overlay shows a "focusing, hold
+steady" hint.
+
+Focus is judged on the native side from a per-frame variance-of-Laplacian
+sharpness measured inside the quad, surfaced as `DetectionEvent.sharpness`.
+A fixed threshold doesn't work, since sharpness numbers swing with scene
+and distance, so a frame must clear `sharpnessFloor` (`8.0` default) and
+then plateau near the top of a short rolling window. If focus hasn't
+cleared by `autoCaptureFocusTimeout` (2500 ms default), capture fires
+anyway so nobody gets stuck; the user can review and re-shoot. Set
+`enableSharpnessGate: false` for the old geometry-only behaviour.
+
 ## Continuous autofocus + tap-to-focus
 
 The native session enables **continuous autofocus** by default on both
@@ -229,6 +247,12 @@ EditCornersScreen(
 
 Every handle, line, and button on `EditCornersScreen` is overridable via
 builders.
+
+While a corner is dragged, a **magnifier loupe** shows the region under
+the finger so the point being placed is never hidden. It is on by default
+(`showMagnifier`) and tunable via `magnifierSize` and `magnifierScale`;
+pass a `magnifierBuilder` to supply a custom loupe widget (return `null`
+to fall back to the bundled one).
 
 ## Image enhancement & shadow removal
 

@@ -14,10 +14,20 @@ import 'quad.dart';
 /// when it learns the camera buffer dimensions). Consumers should treat
 /// `previewSize` events as info-only and not clear the current quad.
 class DetectionEvent {
-  const DetectionEvent({this.quad, this.lowLight = false, this.previewSize});
+  const DetectionEvent({
+    this.quad,
+    this.lowLight = false,
+    this.previewSize,
+    this.sharpness,
+  });
   final Quad? quad;
   final bool lowLight;
   final Size? previewSize;
+
+  /// Raw variance-of-Laplacian sharpness for this frame (in-quad when a
+  /// quad is present, whole-frame otherwise). `null` when the native side
+  /// does not provide it — consumers treat null as "no signal".
+  final double? sharpness;
 
   bool get isPreviewSizeOnly => previewSize != null && quad == null;
 }
