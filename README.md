@@ -1,23 +1,39 @@
 # doclens
 
-A document scanner for Flutter with native edge detection and **100%
-Flutter UI you fully control**.
+A document scanner for Flutter. Edge detection runs in native code (Apple Vision on iOS, a Kotlin pipeline on Android), but every pixel of UI is a Flutter widget you build and control.
 
-Detection runs natively. On iOS 15+ it uses Apple Vision's
-[`VNDetectDocumentSegmentationRequest`](https://developer.apple.com/documentation/vision/vndetectdocumentsegmentationrequest)
-with a [`VNDetectRectanglesRequest`](https://developer.apple.com/documentation/vision/vndetectrectanglesrequest)
-fallback on iOS 13/14. On Android it uses CameraX with a native Kotlin
-Sobel + connected-components + convex-hull pipeline. The detected
-4-corner quad is streamed to Dart every frame. The preview is a Flutter
-`Texture`. Every overlay, button, and label is a widget you build.
+The detected document outline — a 4-corner quad — is streamed to Dart on every frame. The camera preview is a Flutter `Texture`. So the overlay, the shutter button, the flash toggle, the labels: all yours. No native UI bleeds through unless you ask for it.
+
+## Features
+
+- **Native edge detection** — Apple Vision on iOS, a pure-Kotlin CameraX
+  pipeline on Android. The 4-corner quad is streamed to Dart every frame.
+- **Three ways to scan** — a one-line drop-in screen, a fully branded
+  custom UI on the package widget, or a hand-off to the OS-native scanner.
+- **Multi-page / batch scanning** — `DoclensMultiScreen` keeps the camera
+  open, collects a stack of pages with a thumbnail rail, and returns them
+  in order; reorder and delete from a built-in page manager.
+- **Auto-capture with confirmation** — fires once the document is framed
+  and held still, with a brief "hold still" window you can abort.
+- **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
+  modes, and camera switch.
+- **Perspective-correct crop** — the detected quad is dewarped to a clean,
+  flat document image.
+- **Image enhancement & shadow removal** — grayscale, shadow-corrected
+  colour ("magic colour"), and near-bitonal black-and-white for OCR. Runs
+  on-device with no bundled model and no extra dependency.
+- **Auto-orientation & rotate** — straighten the crop upright from its
+  detected text direction, plus a manual `rotateImage` API.
+- **Edit corners after capture** — drag-the-corners helper with re-warp on
+  save; every handle and button is overridable.
 
 ## Three ways to scan
 
-### 1. Drop-in — one line of code
+There are three ways to use this package, from "one line and done" to "I'll draw everything myself."
 
-`DoclensScreen` is a polished, opinionated scanner screen owned by the
-package. It runs the live preview, auto-captures, and presents a built-in
-review screen with retake / edit-corners / accept.
+### 1. Drop-in: one line
+
+`DoclensScreen` is a finished scanner screen. It handles the live preview, auto-capture, and a review step with retake / edit-corners / accept. You get a cropped JPEG back.
 
 ```dart
 final ScanResult? result = await DoclensScreen.scan(context);
@@ -25,7 +41,7 @@ if (result == null) return;            // user cancelled
 final croppedJpegPath = result.croppedImagePath;
 ```
 
-Customise without dropping down to builders:
+You can tune it without writing any builders:
 
 ```dart
 final result = await DoclensScreen.scan(
@@ -85,9 +101,7 @@ overlay style, review builders, …) carries over.
 
 ### 2. Custom UI — full control with `DoclensView`
 
-When you want a fully branded scanner, mount the `DoclensView` widget
-yourself, supply your own builders for the overlay / shutter / flash
-button, and own the result flow.
+Want a scanner that matches your brand? Mount `DoclensView` yourself and supply builders for the overlay, shutter, and flash button. You own the result flow.
 
 ```dart
 class _MyScannerState extends State<MyScanner> {
@@ -115,26 +129,23 @@ class _MyScannerState extends State<MyScanner> {
 }
 ```
 
-Pass `null` to any builder slot to render nothing, the static defaults
-for a quick start, or your own widget for full control.
+Each builder slot takes three things: `null` to draw nothing, a static default for a quick start, or your own widget.
 
-### Quad overlay family
+#### Just want a different shape on the quad?
 
-For the most common need — "I just want a different shape on the
-detected quad" — the package ships a family of pre-built overlays as
-named constructors on `QuadOverlay`:
+That's the most common ask, so the package ships a set of ready-made overlays as named constructors on `QuadOverlay`:
 
-| Variant | Look |
-|---|---|
-| `QuadOverlay.outline` | Just a stroked polygon |
-| `QuadOverlay.filled` | Stroked polygon + tinted fill (the package default) |
-| `QuadOverlay.corners` | Four corner brackets, no connecting lines |
-| `QuadOverlay.cornersFilled` | Corner brackets + tinted fill polygon |
-| `QuadOverlay.dots` | Four filled dots at the corners |
-| `QuadOverlay.dotsLine` | Corner dots + hairline polygon between them |
-| `QuadOverlay.glow` | Blurred halo + stroked polygon |
+| Variant                     | Look                                                     |
+| --------------------------- | -------------------------------------------------------- |
+| `QuadOverlay.outline`       | A stroked polygon, nothing else                          |
+| `QuadOverlay.filled`        | Stroked polygon with a tinted fill (this is the default) |
+| `QuadOverlay.corners`       | Four corner brackets, no connecting lines                |
+| `QuadOverlay.cornersFilled` | Corner brackets plus a tinted fill                       |
+| `QuadOverlay.dots`          | A filled dot at each corner                              |
+| `QuadOverlay.dotsLine`      | Corner dots joined by a hairline                         |
+| `QuadOverlay.glow`          | A blurred halo behind a stroked polygon                  |
 
-Use one directly in a `DoclensView`'s `overlayBuilder`:
+Drop one straight into an `overlayBuilder`:
 
 ```dart
 DoclensView(
@@ -148,7 +159,7 @@ DoclensView(
 );
 ```
 
-Or pick a style on `DoclensScreen.scan(...)` without writing a builder:
+Or name a style on `DoclensScreen.scan(...)` and skip the builder entirely:
 
 ```dart
 final result = await DoclensScreen.scan(
@@ -158,14 +169,11 @@ final result = await DoclensScreen.scan(
 );
 ```
 
-Status colour follows `accent` / `warning` automatically: brighter
-accent on `confirming`, accent on `aligned`, warning on
-`tilted`/`tooClose`/`tooFar`, muted white while `searching`.
+The overlay color tracks detection status on its own: a brighter accent while `confirming`, your accent when `aligned`, the warning color when the doc is `tilted` / `tooClose` / `tooFar`, and muted white while still `searching`.
 
-### 3. OS-native — `scanWithNativeUI`
+### 3. OS-native: hand it to the system scanner
 
-Hand off to the OS scanner when you don't need custom branding on the
-camera surface.
+If you don't need custom branding on the camera, just call the OS scanner.
 
 ```dart
 final List<String>? paths =
@@ -175,28 +183,17 @@ final List<String>? paths =
 );
 ```
 
-On iOS this launches
-[`VNDocumentCameraViewController`](https://developer.apple.com/documentation/visionkit/vndocumentcameraviewcontroller).
-On Android it launches
-[`GmsDocumentScanner`](https://developers.google.com/ml-kit/vision/doc-scanner/android).
-Both flows are full-screen, multi-page, and uniform on both platforms.
-No `DoclensController` is required for this mode.
+iOS opens [`VNDocumentCameraViewController`](https://developer.apple.com/documentation/visionkit/vndocumentcameraviewcontroller); Android opens ML Kit's [`GmsDocumentScanner`](https://developers.google.com/ml-kit/vision/doc-scanner/android). Both are full-screen and multi-page. You don't need a `DoclensController` for this one.
 
-## Auto-capture with confirmation
+## How auto-capture works
 
-Auto-capture is a three-stage state machine that mirrors the rhythm of
-Apple's native scanner:
+Auto-capture is a three-step state machine, modeled on the feel of Apple's native scanner:
 
-1. The classifier sees a document-shaped quad (`DetectionStatus.aligned`).
-2. The quad stays still for `autoCaptureStabilityDuration` (800 ms
-   default) — status flips to `DetectionStatus.confirming` and the
-   default overlay paints brighter green.
-3. If the quad keeps holding still for another
-   `autoCaptureConfirmationDelay` (350 ms default), the shutter fires.
+1. The detector finds a document-shaped quad → `DetectionStatus.aligned`.
+2. The quad holds still for `autoCaptureStabilityDuration` (800 ms by default) → status flips to `confirming` and the default overlay turns a brighter green.
+3. It stays still for another `autoCaptureConfirmationDelay` (350 ms) → the shutter fires.
 
-Move the camera during the confirmation window to abort. All thresholds
-are knobs on `ScannerConfig` and surface as top-level parameters on
-`DoclensScreen.scan(...)`.
+Move the camera during that window and the capture aborts. Every threshold lives on `ScannerConfig` and is also a parameter on `DoclensScreen.scan(...)`.
 
 ### Sharpness gate — no blurry captures
 
@@ -218,23 +215,19 @@ anyway so nobody gets stuck; the user can review and re-shoot. Set
 
 ## Continuous autofocus + tap-to-focus
 
-The native session enables **continuous autofocus** by default on both
-platforms (`AVCaptureDevice.focusMode = .continuousAutoFocus` on iOS;
-CameraX's default `CONTROL_AF_MODE_CONTINUOUS_PICTURE` on Android), and
-opts iOS into the near-distance hint that fits A4-at-arm's-length.
+The native session runs continuous autofocus by default on both platforms (`.continuousAutoFocus` on iOS, `CONTROL_AF_MODE_CONTINUOUS_PICTURE` on Android), and on iOS it adds the near-distance hint that suits holding an A4 page at arm's length.
 
-When `ScannerConfig.enableTapToFocus` is `true` (the default), tapping
-the preview triggers a one-shot focus + auto-exposure at that point. The
-camera reverts to continuous AF after ~3 seconds. The widget renders a
-brief focus reticle at the tap location.
+Tap-to-focus is on by default (`ScannerConfig.enableTapToFocus`). Tap the preview and you get a one-shot focus plus auto-exposure at that point, a focus reticle painted where you tapped, and a return to continuous AF after about 3 seconds.
 
-You can also drive focus programmatically:
+You can also focus from code:
 
 ```dart
 await controller.focusAt(const Offset(0.5, 0.5));  // centre of frame
 ```
 
-## Edit corners after capture
+## Editing corners after capture
+
+If the detected quad isn't quite right, let the user drag the corners and re-warp.
 
 ```dart
 EditCornersScreen(
@@ -245,8 +238,7 @@ EditCornersScreen(
 );
 ```
 
-Every handle, line, and button on `EditCornersScreen` is overridable via
-builders.
+Every handle, line, and button here is overridable through builders too.
 
 While a corner is dragged, a **magnifier loupe** shows the region under
 the finger so the point being placed is never hidden. It is on by default
@@ -296,7 +288,7 @@ It's a knob on `ScannerConfig` too, so it works from every entry point.
 
 ## Auto-orientation & rotate
 
-A capture only knows a document's *in-frame* orientation — shoot a page
+A capture only knows a document's _in-frame_ orientation — shoot a page
 sideways or upside-down and the dewarped crop comes out the same way. Set
 `autoOrientation` to detect the page's text direction on-device and rotate the
 crop in 90° steps so it reads upright:
@@ -308,10 +300,10 @@ final result = await DoclensScreen.scan(
 );
 ```
 
-| Mode | Effect |
-| --- | --- |
-| `none` (default) | Keep the crop's in-frame orientation |
-| `auto` | Detect the dominant text direction and rotate the crop upright |
+| Mode             | Effect                                                         |
+| ---------------- | -------------------------------------------------------------- |
+| `none` (default) | Keep the crop's in-frame orientation                           |
+| `auto`           | Detect the dominant text direction and rotate the crop upright |
 
 Detection reuses the OS text APIs already on each platform — Apple Vision's
 `VNRecognizeTextRequest` on iOS and Play-services ML Kit text recognition on
@@ -335,35 +327,24 @@ final rotatedPath = await controller.rotateImage(scan.croppedImagePath!, 1);
 
 ### iOS
 
-Minimum **iOS 13.0**. Add to `Info.plist`:
+Minimum iOS 13.0. Add this to `Info.plist`:
 
 ```xml
 <key>NSCameraUsageDescription</key>
 <string>Used to scan documents</string>
 ```
 
-Detection uses `VNDetectDocumentSegmentationRequest` on iOS 15+ and
-gracefully falls back to a docs-tuned `VNDetectRectanglesRequest` on iOS
-13/14. Capture uses `AVCapturePhotoOutput`; perspective warp uses
-`CIPerspectiveCorrection`. Both pixel orientation and EXIF orientation
-are handled correctly — see [`doc/decisions.md`](doc/decisions.md).
-
-The native UI flow uses `VNDocumentCameraViewController`.
+On iOS 15+ detection uses `VNDetectDocumentSegmentationRequest`, and falls back to a docs-tuned `VNDetectRectanglesRequest` on iOS 13/14. Capture goes through `AVCapturePhotoOutput`, and the perspective warp uses `CIPerspectiveCorrection`. Both pixel and EXIF orientation are handled — the details are in [`doc/decisions.md`](doc/decisions.md). The native flow uses `VNDocumentCameraViewController`.
 
 ### Android
 
-Minimum **API 21**. `android.permission.CAMERA` is merged into the host
-manifest automatically.
+Minimum API 21. `android.permission.CAMERA` merges into your manifest automatically.
 
-Detection uses CameraX with a pure-Kotlin Sobel-based pipeline on the
-live-preview path (no OpenCV, no on-device ML model bundling). Capture
-uses `ImageCapture` + `android.graphics.Matrix.setPolyToPoly`.
+Detection uses CameraX with a pure-Kotlin Sobel pipeline on the preview path — no OpenCV, no bundled ML model. Capture uses `ImageCapture` plus `android.graphics.Matrix.setPolyToPoly`.
 
-The native UI flow uses ML Kit's `GmsDocumentScanner`, which is delivered
-on demand by Google Play services. Gracefully fails with
-`ScannerUnavailableException` on devices without Play services.
+The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Google Play services. On a device without Play services it throws `ScannerUnavailableException` rather than crashing.
 
-## API surface
+## API reference
 
 - **`DoclensScreen`** — drop-in single-page scanner. `DoclensScreen.scan(ctx)`
   pushes a full-screen route, awaits a `ScanResult?`, and pops itself
@@ -465,12 +446,10 @@ services, exactly like the OS-native scanner).
 - Multi-page PDF export — returns image paths; assemble a PDF yourself.
 - Web or desktop targets.
 
-## Documentation
+## More docs
 
-- [Architecture](doc/architecture.md) — diagram of the Dart ↔ native
-  pipeline and threading rules.
-- [Decisions](doc/decisions.md) — every non-obvious design choice with
-  citations to Apple / Google docs.
+- [Architecture](doc/architecture.md) — the Dart ↔ native pipeline and the threading rules.
+- [Decisions](doc/decisions.md) — every non-obvious design choice, with links to the Apple and Google docs behind it.
 
 ## License
 
