@@ -365,6 +365,10 @@ on demand by Google Play services. Gracefully fails with
   `dots`, `dotsLine`, `glow`) with status-driven colour. Pass the enum
   via `DoclensScreen.overlayStyle` or use a constructor directly inside
   an `overlayBuilder`.
+- **`recognizeText()`** — on-device OCR over an image path. On
+  `DoclensController` or directly on `DoclensPlatform.instance`; needs no
+  camera session. Returns an **`OcrResult`** (`text`, `blocks`, `lines`,
+  `imageSize`) with per-block / per-line bounding boxes and confidence.
 - **`scanWithNativeUI()`** on `DoclensPlatform.instance` — full
   native-modal scan, returns `List<String>?`.
 - **`ScannerConfig`** — every feature flag with a sensible default
@@ -383,10 +387,57 @@ on demand by Google Play services. Gracefully fails with
   `ScannerUnavailableException`, `ScannerInitializationException`,
   `ScannerCaptureException`.
 
+## On-device OCR (text recognition)
+
+Pull the text *out* of a scan. `recognizeText` runs full text recognition on
+any image on disk — typically a capture's `croppedImagePath` — and returns the
+transcript plus per-block / per-line bounding boxes and confidence:
+
+```dart
+final result = await DoclensScreen.scan(
+  context,
+  imageEnhancement: ImageEnhancement.blackAndWhite, // cleanest for OCR
+);
+if (result?.croppedImagePath == null) return;
+
+final ocr = await DoclensPlatform.instance.recognizeText(
+  imagePath: result!.croppedImagePath!,
+);
+print(ocr.text);                                   // the full transcript
+for (final line in ocr.lines) {
+  print('${line.text}  @ ${line.boundingBox}  (${line.confidence})');
+}
+```
+
+It needs no camera session (no `initialize()`), so the call lives on the
+platform instance and works on any JPEG/PNG on disk. If you already manage a
+`DoclensController`, the same method is on it too:
+
+```dart
+final ocr = await controller.recognizeText(somePath);
+```
+
+`OcrResult` exposes `text` (blocks joined by newlines), `blocks` (each an
+`OcrBlock` with `lines`, a pixel-space `boundingBox`, and on Android a
+`recognizedLanguage`), and a flattened `lines` getter (`OcrLine` — `text`,
+`boundingBox`, `confidence`). All bounding boxes are in the recognised image's
+pixel coordinates (origin top-left); use `OcrResult.imageSize` to map them onto
+a scaled preview. A blank or purely graphical page yields an empty result
+(`OcrResult.isEmpty`) rather than an error.
+
+Like auto-orientation, recognition reuses the OS text APIs already on each
+platform — Apple Vision's `VNRecognizeTextRequest` (run at the `.accurate`
+level) on iOS and Play-services ML Kit text recognition on Android — so **no
+model is bundled** (the Android model is delivered on demand by Google Play
+services, exactly like the OS-native scanner).
+
+> Script coverage follows the recogniser: Android uses ML Kit's default
+> **Latin-script** model; iOS Vision recognises its full language set. For
+> non-Latin scripts on Android, run a dedicated ML Kit script model on the
+> cropped path yourself.
+
 ## What this package deliberately does NOT do
 
-- OCR — returns image paths only; pair with a text-recognition library.
-  (`AutoOrientation.auto` reads text to find "upright" but never returns it.)
 - Multi-page PDF export — returns image paths; assemble a PDF yourself.
 - Web or desktop targets.
 

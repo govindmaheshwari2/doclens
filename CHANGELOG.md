@@ -1,3 +1,25 @@
+## 0.0.6
+
+**On-device OCR — new `recognizeText` API**
+
+- New **`recognizeText`** runs full on-device text recognition over any image
+  on disk (typically a capture's `croppedImagePath`) and returns the transcript
+  plus structured geometry. Available on `DoclensController.recognizeText(path)`
+  and directly on `DoclensPlatform.instance.recognizeText(imagePath: …)` — it is
+  a pure file operation, so it needs no camera session or `initialize()` call.
+- New result types: **`OcrResult`** (`text`, `blocks`, flattened `lines`,
+  `imageSize`), **`OcrBlock`** (`text`, pixel-space `boundingBox`, `lines`,
+  and on Android a `recognizedLanguage`), and **`OcrLine`** (`text`,
+  `boundingBox`, `confidence`). All bounding boxes are in the recognised image's
+  pixel coordinates (origin top-left). A blank/graphical page (or an
+  unavailable recogniser) yields an empty `OcrResult` rather than an error.
+- Reuses the OS text APIs already present on each platform — Apple Vision's
+  `VNRecognizeTextRequest` (run at the `.accurate` level) on iOS and
+  Play-services ML Kit text recognition on Android — so **no model is bundled**
+  and **no new dependency is added**; the Android model is delivered on demand
+  by Google Play services. OCR was previously listed as a non-goal; it is now
+  supported.
+
 ## 0.0.5
 
 **Multi-page / batch scanning — new `DoclensMultiScreen`**

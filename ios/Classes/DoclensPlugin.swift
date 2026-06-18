@@ -54,6 +54,8 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
             handleWarp(call: call, result: result)
         case "rotateImage":
             handleRotate(call: call, result: result)
+        case "recognizeText":
+            handleRecognizeText(call: call, result: result)
         case "setFlashMode":
             if let mode = (call.arguments as? [String: Any])?["mode"] as? String {
                 session?.setFlashMode(mode)
@@ -127,6 +129,27 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
                 let out = try ImageWarper.warpFile(
                     inputPath: path, quad: quad, jpegQuality: jpegQuality,
                     enhancement: enhancement, autoOrientation: autoOrientation)
+                DispatchQueue.main.async { result(out) }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "capture_failed",
+                                        message: error.localizedDescription,
+                                        details: nil))
+                }
+            }
+        }
+    }
+
+    private func handleRecognizeText(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let path = args["imagePath"] as? String else {
+            result(FlutterError(code: "capture_failed",
+                                message: "Invalid recognizeText args", details: nil))
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let out = try TextRecognizer.recognize(path: path)
                 DispatchQueue.main.async { result(out) }
             } catch {
                 DispatchQueue.main.async {

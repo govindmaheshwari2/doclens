@@ -212,3 +212,36 @@ References:
 - [`CGImagePropertyOrientation`](https://developer.apple.com/documentation/imageio/cgimagepropertyorientation)
 - [ML Kit text recognition v2 (Android)](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
 - [`InputImage.fromBitmap`](https://developers.google.com/android/reference/com/google/mlkit/vision/common/InputImage#fromBitmap(android.graphics.Bitmap,%20int))
+
+## OCR (`recognizeText`): the same text recognizers, run for accuracy
+
+`recognizeText` returns the *content* of a scan, reusing the very recognizers
+auto-orientation already leans on — Apple Vision's `VNRecognizeTextRequest` on
+iOS and Play-services ML Kit Latin text recognition on Android — so OCR adds
+**no bundled model and no new dependency**. (The ML Kit text-recognition
+artifact is already a dependency for auto-orientation.)
+
+Two deliberate differences from the auto-orientation pass:
+
+- **Accuracy over speed.** Auto-orientation only needs to know *which way is
+  up*, so it runs four `.fast` passes on a downscale. OCR is the payload, so it
+  runs a single `.accurate` pass with language correction on iOS, against the
+  full-resolution upright pixels (EXIF baked in first, matching the warp path).
+  It is a one-shot call on a captured still — not the live preview — so the cost
+  is acceptable.
+- **A uniform `blocks → lines` shape.** ML Kit natively returns
+  blocks → lines → elements with pixel `Rect`s and per-line confidence. Vision
+  has no paragraph "block" concept — it returns line-level
+  `VNRecognizedTextObservation`s — so each observation is emitted as a
+  single-line block, keeping `OcrResult` identical across platforms. Vision's
+  normalized, bottom-left-origin boxes are converted to top-left-origin pixel
+  coordinates so every bounding box (both platforms) matches the image the
+  caller displays. An unavailable recognizer or a blank page yields an empty
+  `OcrResult`, never an error — the same "leave it alone" philosophy as
+  auto-orientation.
+
+References:
+- [`VNRecognizeTextRequest`](https://developer.apple.com/documentation/vision/vnrecognizetextrequest)
+- [`VNRecognizedTextObservation`](https://developer.apple.com/documentation/vision/vnrecognizedtextobservation)
+- [ML Kit text recognition v2 (Android)](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
+- [`Text.TextBlock`](https://developers.google.com/android/reference/com/google/mlkit/vision/text/Text.TextBlock)

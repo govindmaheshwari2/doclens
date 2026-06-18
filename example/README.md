@@ -16,6 +16,22 @@ shipping flows:
 The drop-in entry navigates to a small `_ReturnedResult` page after
 capture so you can see exactly what `ScanResult` was emitted.
 
+### Extract text (OCR)
+
+Every flow can pull the text out of a scan with
+`DoclensPlatform.instance.recognizeText(imagePath: …)`:
+
+- **Drop-in** result page has an **Extract text · OCR** bar.
+- **Multi-page batch** — tap any page thumbnail.
+- **Branded** review screen — the `Aa` action next to retake / crop.
+- **System scanner** — tap any returned page.
+
+All of them open one shared, reusable sheet (`lib/ocr_sheet.dart`,
+`showOcrSheet(context, path)`) that runs recognition on-device, then shows
+the full transcript (with copy-to-clipboard) and a per-line breakdown with
+confidence. It's a single themeable widget you can lift straight into your
+own app.
+
 The branded entry lives in `lib/styles/branded_style.dart` — a single
 file you can copy into your own app and re-brand.
 

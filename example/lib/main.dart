@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'ocr_sheet.dart';
 import 'styles/branded_style.dart';
 import 'styles/native_os_style.dart';
 
@@ -1124,6 +1125,11 @@ class _ReturnedResultState extends State<_ReturnedResult> {
   ScanResult get result => widget.result;
   ImageEnhancement? get enhancement => widget.enhancement;
 
+  /// Run on-device OCR on the displayed image. The shared sheet calls the
+  /// package's `recognizeText` itself (a pure file op — no camera session or
+  /// controller needed) on the current, possibly-rotated, crop path.
+  void _runOcr() => showOcrSheet(context, _path, accent: _kRust);
+
   /// Manual rotate — a pure file op via the platform instance, so it needs no
   /// camera session or controller. `evict` clears the old file from Flutter's
   /// image cache so the rotated bytes actually show.
@@ -1223,6 +1229,10 @@ class _ReturnedResultState extends State<_ReturnedResult> {
               ),
             ),
             const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 0, 22, 14),
+              child: _OcrActionBar(onTap: _runOcr),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
               child: Container(
@@ -1360,26 +1370,44 @@ class _ReturnedBatch extends StatelessWidget {
                 itemBuilder: (context, i) {
                   final page = pages[i];
                   final path = page.croppedImagePath ?? page.rawImagePath;
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: _kPaperHi,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _kRule),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Page ${i + 1}', style: _mono(size: 10)),
-                        const SizedBox(height: 6),
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.file(File(path), fit: BoxFit.cover,
-                                width: double.infinity),
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => showOcrSheet(context, path, accent: _kRust),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _kPaperHi,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _kRule),
+                      ),
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text('Page ${i + 1}', style: _mono(size: 10)),
+                              const Spacer(),
+                              const Icon(Icons.text_fields,
+                                  size: 13, color: _kRust),
+                            ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.file(File(path), fit: BoxFit.cover,
+                                  width: double.infinity),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text('TAP TO EXTRACT TEXT',
+                              style: _mono(
+                                size: 8,
+                                color: _kInkDim,
+                                letterSpacing: 0.2,
+                              )),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -1418,6 +1446,62 @@ class _RotateButton extends StatelessWidget {
           icon,
           color: enabled ? _kInk : _kInkDim,
           size: 18,
+        ),
+      ),
+    );
+  }
+}
+
+// =====================================================================
+//  OCR — extract text from a scan (recognizeText)
+// =====================================================================
+
+/// Full-width call-to-action that opens the shared OCR sheet (which runs
+/// `recognizeText` on-device and renders the transcript).
+class _OcrActionBar extends StatelessWidget {
+  const _OcrActionBar({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _kPaperHi,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _kRule),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.text_fields, size: 18, color: _kRust),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'EXTRACT TEXT · OCR',
+                    style: _mono(
+                      size: 10,
+                      color: _kRust,
+                      weight: FontWeight.w700,
+                      letterSpacing: 0.26,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'On-device · recognizeText()',
+                    style: _mono(size: 10.5, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Icon(Icons.arrow_forward, size: 14, color: _kRust),
+          ],
         ),
       ),
     );

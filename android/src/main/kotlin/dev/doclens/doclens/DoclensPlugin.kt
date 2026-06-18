@@ -90,6 +90,7 @@ class DoclensPlugin :
             }
             "warpImage" -> handleWarp(call, result)
             "rotateImage" -> handleRotate(call, result)
+            "recognizeText" -> handleRecognizeText(call, result)
             "setFlashMode" -> { session?.setFlashMode(call.argument<String>("mode") ?: "auto"); result.success(null) }
             "switchCamera" -> { session?.switchCamera(); result.success(null) }
             "pause" -> { session?.pause(); result.success(null) }
@@ -133,6 +134,21 @@ class DoclensPlugin :
             try {
                 val q = Quad.fromMap(quadMap)
                 val out = ImageWarper.warpFile(rawPath, q, quality, enhancement, autoOrientation)
+                mainHandler.post { result.success(out) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("capture_failed", e.message, null) }
+            }
+        }
+    }
+
+    private fun handleRecognizeText(call: MethodCall, result: MethodChannel.Result) {
+        val path = call.argument<String>("imagePath")
+        if (path == null) {
+            result.error("capture_failed", "Invalid recognizeText args", null); return
+        }
+        backgroundExecutor.execute {
+            try {
+                val out = TextRecognizer.recognize(path)
                 mainHandler.post { result.success(out) }
             } catch (e: Exception) {
                 mainHandler.post { result.error("capture_failed", e.message, null) }
