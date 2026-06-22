@@ -189,6 +189,33 @@ class ShowroomHome extends StatelessWidget {
       ),
       _StyleEntry(
         index: '04',
+        eyebrow: 'PACKAGE UI',
+        title: 'Large-document tiles',
+        subtitle:
+            "Capture a document too big for one frame. Shoot a piece, tap a + "
+            'on any edge, line the next shot up against the overlap ghost; a '
+            'miniview shows the whole page forming, then it stitches to one '
+            'image.',
+        tags: const [
+          'TileScanScreen.scan()',
+          'overlap ghost',
+          'auto-stitch',
+        ],
+        accent: _kInkBlue,
+        preview: const _TilePreview(),
+        onTap: (ctx) async {
+          final path = await TileScanScreen.scan(
+            ctx,
+            accentColor: _kRust,
+          );
+          if (path == null || !ctx.mounted) return;
+          await Navigator.of(ctx).push<void>(
+            MaterialPageRoute(builder: (_) => _ReturnedTileScan(path: path)),
+          );
+        },
+      ),
+      _StyleEntry(
+        index: '05',
         eyebrow: 'OS NATIVE',
         title: 'System scanner',
         subtitle: 'Hand off to the OS. Vision document camera on iOS, ML Kit '
@@ -707,6 +734,110 @@ class _DropInPreview extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _TilePreview extends StatelessWidget {
+  const _TilePreview();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget frag(double opacity) => Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF4F0E8).withValues(alpha: opacity),
+            borderRadius: BorderRadius.circular(1.5),
+            border: Border.all(color: const Color(0xFF14130F), width: 0.5),
+          ),
+        );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Center(
+          child: SizedBox(
+            width: 96,
+            height: 116,
+            // A 2x2 block of fragments — the composite taking shape.
+            child: GridView.count(
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 3,
+              crossAxisSpacing: 3,
+              children: [
+                frag(0.95),
+                frag(0.6),
+                frag(0.6),
+                frag(0.35),
+              ],
+            ),
+          ),
+        ),
+        // A `+` affordance on the open right edge.
+        Positioned(
+          right: 28,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: const BoxDecoration(
+                color: _kRust,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.add, size: 13, color: Colors.white),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: CustomPaint(painter: _QuadBracketsPainter(color: _kInkBlue)),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReturnedTileScan extends StatelessWidget {
+  const _ReturnedTileScan({required this.path});
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF14130F),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+              child: Row(
+                children: [
+                  _OverlayIconButton(
+                    icon: Icons.arrow_back,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'STITCHED COMPOSITE',
+                    style: _mono(
+                      size: 10.5,
+                      color: Colors.white,
+                      weight: FontWeight.w700,
+                      letterSpacing: 0.28,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: InteractiveViewer(
+                maxScale: 6,
+                child: Center(child: Image.file(File(path))),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
