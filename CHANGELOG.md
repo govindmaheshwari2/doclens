@@ -1,3 +1,22 @@
+## Unreleased
+
+**Gallery import — detect → edit → warp on an existing photo**
+
+- New `DoclensController.detectInImage(path)` (and the underlying
+  `DoclensPlatform.detectInImage`) runs the native edge detector — the same
+  one that powers the live preview — on a still image already on disk, such
+  as one the user imported from the gallery. It returns an `ImageDetection`
+  with the detected quad in normalized `[0,1]` coords (or `null` when nothing
+  document-like is found) plus the image's EXIF-upright pixel size.
+- This makes the package's whole pipeline available without the camera: feed
+  `ImageDetection.imageSize` and `ImageDetection.quadIn` to
+  `EditCornersScreen`, then `warpImage` with the user-adjusted corners.
+  `ImageDetection.quadIn` falls back to a 10%-inset rectangle so there are
+  always draggable corners to start from. It's a pure file operation — no
+  `initialize()` / camera session required.
+- The example app gains a "Gallery import" entry demonstrating the full
+  detect → edit → warp flow on a picked photo.
+
 ## 0.0.6
 
 **Sharpness-gated auto-capture**

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:doclens/doclens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'ocr_sheet.dart';
@@ -203,6 +204,25 @@ class ShowroomHome extends StatelessWidget {
         onTap: (ctx) => Navigator.of(ctx).push(
           MaterialPageRoute<void>(builder: (_) => const NativeOSScanner()),
         ),
+      ),
+      _StyleEntry(
+        index: '05',
+        eyebrow: 'GALLERY IMPORT',
+        title: 'Import a photo',
+        subtitle: 'Pick an existing photo from the gallery, then run the same '
+            'detect → edit-corners → warp pipeline on it. No camera needed.',
+        tags: const [
+          'detectInImage()',
+          'EditCornersScreen',
+          'warpImage()',
+        ],
+        accent: _kRust,
+        preview: const _GalleryPreview(),
+        onTap: (ctx) async {
+          final mode = await _pickEnhancement(ctx);
+          if (mode == null || !ctx.mounted) return;
+          await _importFromGallery(ctx, mode);
+        },
       ),
     ];
 
@@ -887,6 +907,38 @@ class _NativePreview extends StatelessWidget {
   }
 }
 
+class _GalleryPreview extends StatelessWidget {
+  const _GalleryPreview();
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const _MiniDoc(skew: 0.0, opacity: 0.92),
+        Positioned.fill(
+          child: CustomPaint(painter: _QuadBracketsPainter(color: _kRust)),
+        ),
+        // A small "photos" badge to signal the source is the gallery, not
+        // the live camera.
+        Positioned(
+          top: 8,
+          right: 8,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+            child: const Icon(Icons.photo_library_outlined,
+                size: 12, color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _QuadBracketsPainter extends CustomPainter {
   _QuadBracketsPainter({required this.color});
   final Color color;
@@ -987,6 +1039,94 @@ class _FooterLink extends StatelessWidget {
       ),
     );
   }
+}
+
+// =====================================================================
+//  Gallery import — detect → edit → warp on an imported photo
+// =====================================================================
+
+/// Pick a photo from the gallery and run the package's own pipeline on it:
+///
+///   1. **detect** — `DoclensPlatform.detectInImage` runs the native edge
+///      detector on the still image (the same detector that powers the live
+///      preview), returning a quad + the image's pixel size.
+///   2. **edit**   — `EditCornersScreen` lets the user nudge the corners,
+///      seeded from the detection (or a 10% inset when nothing was found).
+///   3. **warp**   — on save, `DoclensPlatform.warpImage` dewarps the photo
+///      using the final corners and the chosen [mode] enhancement.
+///
+/// No camera session is involved — every step is a pure file operation.
+Future<void> _importFromGallery(
+    BuildContext context, ImageEnhancement mode) async {
+  XFile? picked;
+  try {
+    picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+  } catch (e) {
+    if (context.mounted) _showSnack(context, 'Could not open the gallery: $e');
+    return;
+  }
+  if (picked == null || !context.mounted) return;
+  final path = picked.path;
+
+  // 1. DETECT.
+  ImageDetection? detection;
+  try {
+    detection = await DoclensPlatform.instance.detectInImage(imagePath: path);
+  } catch (e) {
+    if (context.mounted) _showSnack(context, 'Detection failed: $e');
+    return;
+  }
+  if (!context.mounted) return;
+  final det = detection;
+  if (det == null) {
+    _showSnack(context, "Couldn't read that image.");
+    return;
+  }
+
+  // 2. EDIT (and 3. WARP on save). EditCornersScreen owns its own pop and
+  // resolves with the warped crop's path.
+  final warpedPath = await Navigator.of(context).push<String>(
+    MaterialPageRoute<String>(
+      builder: (_) => EditCornersScreen(
+        imagePath: path,
+        initialQuad: det.quadIn,
+        imageSize: det.imageSize,
+        saveLabel: 'Use',
+        onSave: (quad) => DoclensPlatform.instance.warpImage(
+          rawImagePath: path,
+          quad: quad,
+          enhancement: mode,
+          autoOrientation: AutoOrientation.auto,
+        ),
+      ),
+    ),
+  );
+  if (warpedPath == null || !context.mounted) return;
+
+  // Show the dewarped result with the same viewer the drop-in entry uses.
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      builder: (_) => _ReturnedResult(
+        result: ScanResult(
+          croppedImagePath: warpedPath,
+          rawImagePath: path,
+          detectedQuad: det.quadIn,
+          rawImageSize: det.imageSize,
+        ),
+        enhancement: mode,
+      ),
+    ),
+  );
+}
+
+void _showSnack(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message, style: _mono(size: 12, color: _kPaperHi)),
+      backgroundColor: _kInk,
+      behavior: SnackBarBehavior.floating,
+    ),
+  );
 }
 
 // =====================================================================

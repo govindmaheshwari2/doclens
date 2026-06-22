@@ -246,6 +246,44 @@ the finger so the point being placed is never hidden. It is on by default
 pass a `magnifierBuilder` to supply a custom loupe widget (return `null`
 to fall back to the bundled one).
 
+## Gallery import — run the pipeline on an existing photo
+
+The whole **detect → edit → warp** flow also works without the camera, on a
+photo the user already has. `detectInImage` runs the same native edge
+detector the live preview uses on a still image on disk, so you can pick a
+photo from the gallery and dewarp it like a fresh capture:
+
+```dart
+// Pick a photo however you like (e.g. the `image_picker` package).
+final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+if (picked == null) return;
+
+// 1. Detect — native edge detection on the still image.
+final detection = await controller.detectInImage(picked.path);
+if (detection == null) return; // couldn't read the image
+
+// 2. Edit — seed EditCornersScreen with the detected corners (or a 10%
+//    inset when nothing was found), 3. Warp on save.
+final warpedPath = await Navigator.of(context).push<String>(
+  MaterialPageRoute(
+    builder: (_) => EditCornersScreen(
+      imagePath: picked.path,
+      initialQuad: detection.quadIn,   // pixel-space, ready to use
+      imageSize: detection.imageSize,
+      onSave: (quad) => controller.warpImage(picked.path, quad),
+    ),
+  ),
+);
+```
+
+`detectInImage` returns an `ImageDetection` with the quad in normalized
+`[0,1]` coords (or `null` when nothing document-like is found) plus the
+image's EXIF-upright pixel size; `quadIn` gives you the same quad already
+scaled into pixel coordinates. Like `warpImage` / `rotateImage` /
+`recognizeText`, it's a pure file operation — no `initialize()` or camera
+session required. The example app's **Gallery import** entry shows the full
+flow end to end.
+
 ## Image enhancement & shadow removal
 
 By default the cropped output is a pure dewarp — the original pixels,
@@ -357,8 +395,9 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
 - **`DoclensController`** — owns a session. Streams: `quadStream`,
   `statusStream`, `autoCaptureStream`, `lowLightStream`,
   `previewSizeStream`. Methods: `initialize()`, `capture()`,
-  `warpImage()`, `rotateImage()`, `focusAt()`, `setFlashMode()`,
-  `cycleFlashMode()`, `switchCamera()`, `pause()`, `resume()`, `dispose()`.
+  `warpImage()`, `rotateImage()`, `detectInImage()`, `focusAt()`,
+  `setFlashMode()`, `cycleFlashMode()`, `switchCamera()`, `pause()`,
+  `resume()`, `dispose()`.
 - **`DoclensView`** — Flutter widget rendering preview + your overlays.
   Builder slots: `overlayBuilder`, `captureButtonBuilder`,
   `flashButtonBuilder`, `lowLightHintBuilder`, `debugOverlayBuilder`.
@@ -374,6 +413,12 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
   `DoclensController` or directly on `DoclensPlatform.instance`; needs no
   camera session. Returns an **`OcrResult`** (`text`, `blocks`, `lines`,
   `imageSize`) with per-block / per-line bounding boxes and confidence.
+- **`detectInImage()`** — run native edge detection on a still image (e.g.
+  a gallery import). On `DoclensController` or directly on
+  `DoclensPlatform.instance`; needs no camera session. Returns an
+  **`ImageDetection`** (`quad`, `imageSize`, `quadIn`) to feed
+  `EditCornersScreen` + `warpImage` — the full detect → edit → warp pipeline
+  off a picked photo.
 - **`scanWithNativeUI()`** on `DoclensPlatform.instance` — full
   native-modal scan, returns `List<String>?`.
 - **`ScannerConfig`** — every feature flag with a sensible default
