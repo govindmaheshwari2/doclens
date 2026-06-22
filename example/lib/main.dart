@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'ocr_sheet.dart';
 import 'styles/branded_style.dart';
+import 'styles/large_doc_style.dart';
 import 'styles/native_os_style.dart';
 
 void main() => runApp(const ExampleApp());
@@ -189,24 +190,26 @@ class ShowroomHome extends StatelessWidget {
       ),
       _StyleEntry(
         index: '04',
-        eyebrow: 'PACKAGE UI',
+        eyebrow: 'FULL CUSTOM',
         title: 'Large-document tiles',
         subtitle:
             "Capture a document too big for one frame. Shoot a piece, tap a + "
             'on any edge, line the next shot up against the overlap ghost; a '
             'miniview shows the whole page forming, then it stitches to one '
-            'image.',
+            'image. Fully custom chrome via builder slots.',
         tags: const [
-          'TileScanScreen.scan()',
-          'overlap ghost',
+          'TileScanScreen',
+          'builder slots',
           'auto-stitch',
         ],
         accent: _kInkBlue,
         preview: const _TilePreview(),
         onTap: (ctx) async {
-          final path = await TileScanScreen.scan(
-            ctx,
-            accentColor: _kRust,
+          final path = await Navigator.of(ctx).push<String>(
+            MaterialPageRoute<String>(
+              fullscreenDialog: true,
+              builder: (_) => const LargeDocScanner(),
+            ),
           );
           if (path == null || !ctx.mounted) return;
           await Navigator.of(ctx).push<void>(
