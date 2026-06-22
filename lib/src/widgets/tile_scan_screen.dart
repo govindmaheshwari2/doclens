@@ -133,9 +133,27 @@ class _TileScanScreenState extends State<TileScanScreen> {
     super.dispose();
   }
 
-  void _onSession() => setState(() {});
+  void _onSession() {
+    _syncCamera();
+    setState(() {});
+  }
 
   bool _committing = false;
+  bool? _cameraLive;
+
+  /// Run the camera only while a fragment is actually being captured. During
+  /// review/merge it would keep auto-capturing into a phase with no handler
+  /// and burn battery. Tracks the last requested state to avoid spamming
+  /// pause/resume on every notification.
+  void _syncCamera() {
+    if (!_controller.isInitialized) return;
+    final live = _session.phase == TileScanPhase.empty ||
+        _session.phase == TileScanPhase.capturing;
+    if (_cameraLive == live) return;
+    _cameraLive = live;
+    (live ? _controller.resume() : _controller.pause())
+        .catchError((Object _) {});
+  }
 
   /// Single entry point for both the manual capture button and auto-capture:
   /// take the cropped (or raw) result into the session.

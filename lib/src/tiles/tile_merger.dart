@@ -56,10 +56,22 @@ class CanvasTileMerger implements TileMerger {
     final strideY = maxH * (1 - overlapFraction);
 
     final b = canvas.gridBounds();
-    ui.Offset originOf(Tile t) => ui.Offset(
+    ui.Offset rawOriginOf(Tile t) => ui.Offset(
           (t.col - b.minCol) * strideX + t.refinedShift.dx,
           (t.row - b.minRow) * strideY + t.refinedShift.dy,
         );
+
+    // A refined shift can be negative (a tile nudged left/up of its slot),
+    // so find the minimum corner and translate everything to keep the
+    // composite's top-left at (0,0) — otherwise those tiles clip off-canvas.
+    var minX = 0.0, minY = 0.0;
+    for (final t in canvas.tiles) {
+      final o = rawOriginOf(t);
+      if (o.dx < minX) minX = o.dx;
+      if (o.dy < minY) minY = o.dy;
+    }
+    ui.Offset originOf(Tile t) =>
+        rawOriginOf(t).translate(-minX, -minY);
 
     // Composite extent.
     double w = 0, h = 0;
