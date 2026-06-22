@@ -1,3 +1,24 @@
+## Unreleased
+
+**Multi-shot tile scanning — capture a document too large for one frame**
+
+- New `TileScanScreen` lets the user build one document out of several
+  overlapping captures: shoot a fragment, tap a `+` on any edge of the
+  growing composite, and line the next shot up against a translucent
+  **overlap ghost** of the previous tile. A **miniview** shows the whole
+  document taking shape; *Done* stitches the tiles into a single image.
+  Supports long pages (a row/column), L-shapes, and 2×2 blocks.
+- True to the package's "you own the UI" stance, every piece of chrome is
+  overridable — `plusButtonBuilder`, `miniviewBuilder`, `hintBuilder`,
+  `captureButtonBuilder`, plus `accentColor`, `overlapFraction`, and
+  `ghostOpacity`. The capture pipeline, state machine, grid model,
+  alignment, and stitching are all injectable.
+- Underlying pieces are exported for custom UIs: `TileCanvas` (2-D grid
+  placement), `TileScanSession` (the capture→review→merge state machine),
+  `TileAligner` (overlap-band correction; default `ManualPlacementAligner`
+  trusts the hand alignment), and `TileMerger` (`CanvasTileMerger` pastes
+  tiles at their grid slots — seam feathering is a future step).
+
 ## 0.0.6
 
 **Sharpness-gated auto-capture**
