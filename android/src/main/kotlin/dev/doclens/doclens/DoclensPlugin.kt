@@ -102,6 +102,7 @@ class DoclensPlugin :
                 result.success(null)
             }
             "scanWithNativeUI" -> handleNativeUIScan(call, result)
+            "detectInImage" -> handleDetectInImage(call, result)
             else -> result.notImplemented()
         }
     }
@@ -134,6 +135,21 @@ class DoclensPlugin :
             try {
                 val q = Quad.fromMap(quadMap)
                 val out = ImageWarper.warpFile(rawPath, q, quality, enhancement, autoOrientation)
+                mainHandler.post { result.success(out) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("capture_failed", e.message, null) }
+            }
+        }
+    }
+
+    private fun handleDetectInImage(call: MethodCall, result: MethodChannel.Result) {
+        val path = call.argument<String>("imagePath")
+        if (path == null) {
+            result.error("capture_failed", "Invalid detectInImage args", null); return
+        }
+        backgroundExecutor.execute {
+            try {
+                val out = QuadDetector.detectInFile(path)
                 mainHandler.post { result.success(out) }
             } catch (e: Exception) {
                 mainHandler.post { result.error("capture_failed", e.message, null) }

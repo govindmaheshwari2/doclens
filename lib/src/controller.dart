@@ -373,6 +373,24 @@ class DoclensController extends ChangeNotifier {
     return DoclensPlatform.instance.recognizeText(imagePath: imagePath);
   }
 
+  /// Run document edge-detection on a still image already on disk (e.g. one
+  /// the user imported from the gallery), returning an [ImageDetection] with
+  /// the detected quad in normalized `[0,1]` coords (or `null` quad when
+  /// nothing is found) plus the image's EXIF-upright pixel size.
+  ///
+  /// This is the entry point for running the package's **detect → edit →
+  /// warp** pipeline on an imported image: feed [ImageDetection.imageSize] and
+  /// [ImageDetection.quadIn] to `EditCornersScreen`, then call [warpImage]
+  /// with the user-adjusted corners.
+  ///
+  /// A pure file operation — needs no camera, so it works whether or not
+  /// [initialize] has been called. Returns `null` only when the image cannot
+  /// be read.
+  Future<ImageDetection?> detectInImage(String imagePath) {
+    _ensureNotDisposed();
+    return DoclensPlatform.instance.detectInImage(imagePath: imagePath);
+  }
+
   Future<void> setFlashMode(FlashMode mode) async {
     _ensureReady();
     await DoclensPlatform.instance.setFlashMode(mode);

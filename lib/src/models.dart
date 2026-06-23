@@ -189,6 +189,48 @@ class ScanResult {
   }
 }
 
+/// Result of running document detection on a still image (e.g. one imported
+/// from the photo gallery) via [DoclensController.detectInImage].
+///
+/// Lets you run the package's own **detect → edit → warp** pipeline on an
+/// arbitrary image instead of a live capture: feed [imageSize] and a
+/// pixel-space quad (from [quadIn]) to `EditCornersScreen`, then warp the
+/// image with the user-adjusted corners.
+class ImageDetection {
+  const ImageDetection({
+    required this.quad,
+    required this.imageSize,
+  });
+
+  /// Detected document quad in **normalized** `[0, 1]` coordinates
+  /// (`topLeft → topRight → bottomRight → bottomLeft`, origin top-left), or
+  /// `null` when no document-like quad was found. Scale it into pixel space
+  /// with [quadIn] (or `quad.scaleToSize(imageSize)`).
+  final Quad? quad;
+
+  /// Pixel size of the image the detection ran on, with any EXIF orientation
+  /// already applied (the same upright pixel space the warp operates in). Use
+  /// it to size `EditCornersScreen` and to scale [quad] into pixel coords.
+  final Size imageSize;
+
+  /// The detected [quad] scaled into [imageSize] pixel coordinates, ready to
+  /// seed `EditCornersScreen`. Falls back to a 10%-inset rectangle when no
+  /// quad was detected, so the user always has draggable corners to start
+  /// from.
+  Quad get quadIn {
+    final q = quad;
+    if (q != null) return q.scaleToSize(imageSize);
+    final dx = imageSize.width * 0.1;
+    final dy = imageSize.height * 0.1;
+    return Quad(
+      topLeft: Offset(dx, dy),
+      topRight: Offset(imageSize.width - dx, dy),
+      bottomRight: Offset(imageSize.width - dx, imageSize.height - dy),
+      bottomLeft: Offset(dx, imageSize.height - dy),
+    );
+  }
+}
+
 /// Configuration for a scanner session. Every flag has a sensible default;
 /// developers override only what they care about.
 class ScannerConfig {
