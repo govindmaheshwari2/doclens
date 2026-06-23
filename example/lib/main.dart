@@ -190,24 +190,24 @@ class ShowroomHome extends StatelessWidget {
       _StyleEntry(
         index: '04',
         eyebrow: 'PACKAGE UI',
-        title: 'Large-document tiles',
+        title: 'Large-document scan',
         subtitle:
             "Capture a document too big for one frame. Shoot a piece, tap a + "
             'on any edge, line the next shot up against the overlap ghost; a '
             'miniview shows the whole page forming, then it stitches to one '
             'image.',
         tags: const [
-          'TileScanScreen.scan()',
+          'DoclensLargeDocScreen.scan()',
           'overlap ghost',
           'auto-stitch',
         ],
         accent: _kRust,
-        preview: const _TilePreview(),
+        preview: const _LargeDocPreview(),
         onTap: (ctx) async {
-          final path = await TileScanScreen.scan(ctx);
+          final path = await DoclensLargeDocScreen.scan(ctx);
           if (path == null || !ctx.mounted) return;
           await Navigator.of(ctx).push<void>(
-            MaterialPageRoute(builder: (_) => _ReturnedTileScan(path: path)),
+            MaterialPageRoute(builder: (_) => _ReturnedLargeDoc(path: path)),
           );
         },
       ),
@@ -735,8 +735,8 @@ class _DropInPreview extends StatelessWidget {
   }
 }
 
-class _TilePreview extends StatelessWidget {
-  const _TilePreview();
+class _LargeDocPreview extends StatelessWidget {
+  const _LargeDocPreview();
 
   @override
   Widget build(BuildContext context) {
@@ -794,8 +794,8 @@ class _TilePreview extends StatelessWidget {
   }
 }
 
-class _ReturnedTileScan extends StatelessWidget {
-  const _ReturnedTileScan({required this.path});
+class _ReturnedLargeDoc extends StatelessWidget {
+  const _ReturnedLargeDoc({required this.path});
   final String path;
 
   @override

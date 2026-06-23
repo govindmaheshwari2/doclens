@@ -4,42 +4,42 @@ import 'package:flutter/material.dart';
 
 import '../controller.dart';
 import '../models.dart';
-import '../tiles/tile_aligner.dart';
-import '../tiles/tile_canvas.dart';
-import '../tiles/tile_merger.dart';
-import '../tiles/tile_scan_session.dart';
+import '../large_doc/large_doc_aligner.dart';
+import '../large_doc/large_doc_canvas.dart';
+import '../large_doc/large_doc_merger.dart';
+import '../large_doc/large_doc_session.dart';
 import 'doclens_view.dart';
 
-/// Builds the `+` affordance shown on an open [TileEdge] of the composite.
+/// Builds the `+` affordance shown on an open [LargeDocEdge] of the composite.
 typedef PlusButtonBuilder = Widget Function(
-    BuildContext context, TileEdge edge, VoidCallback onTap);
+    BuildContext context, LargeDocEdge edge, VoidCallback onTap);
 
 /// Builds the small "document so far" map shown during review.
 typedef MiniviewBuilder = Widget Function(
-    BuildContext context, TileCanvas canvas);
+    BuildContext context, LargeDocCanvas canvas);
 
 /// Builds the coaching hint shown while a fragment is being captured.
-typedef TileHintBuilder = Widget Function(BuildContext context, TileEdge? edge);
+typedef LargeDocHintBuilder = Widget Function(BuildContext context, LargeDocEdge? edge);
 
 /// A multi-shot scanner for documents too large to fit in a single frame.
 ///
-/// The user captures one fragment ("tile"), then taps a `+` on any edge of
+/// The user captures one fragment ("piece"), then taps a `+` on any edge of
 /// the growing composite to shoot the adjacent piece — lining it up against a
-/// translucent **overlap ghost** of the previous tile. A **miniview** shows
-/// the whole document taking shape. On *Done* the tiles are stitched into one
+/// translucent **overlap ghost** of the previous piece. A **miniview** shows
+/// the whole document taking shape. On *Done* the pieces are stitched into one
 /// image and returned.
 ///
 /// Like the rest of doclens, every piece of chrome is overridable: pass any
 /// of the `*Builder` callbacks (or the colours) to fully rebrand the screen.
 /// Pass nothing and you get a clean monochrome default. The capture pipeline,
-/// state machine ([TileScanSession]), grid model ([TileCanvas]), alignment
-/// ([TileAligner]) and stitching ([TileMerger]) are all injectable too.
-class TileScanScreen extends StatefulWidget {
-  const TileScanScreen({
+/// state machine ([LargeDocSession]), grid model ([LargeDocCanvas]), alignment
+/// ([LargeDocAligner]) and stitching ([LargeDocMerger]) are all injectable too.
+class DoclensLargeDocScreen extends StatefulWidget {
+  const DoclensLargeDocScreen({
     super.key,
     this.config = const ScannerConfig(),
     this.aligner = const ManualPlacementAligner(),
-    this.merger = const CanvasTileMerger(),
+    this.merger = const CanvasLargeDocMerger(),
     this.accentColor = const Color(0xFF000000),
     this.overlapFraction = 0.3,
     this.ghostOpacity = 0.4,
@@ -51,13 +51,13 @@ class TileScanScreen extends StatefulWidget {
   });
 
   final ScannerConfig config;
-  final TileAligner aligner;
-  final TileMerger merger;
+  final LargeDocAligner aligner;
+  final LargeDocMerger merger;
 
   /// Accent used by the default chrome (plus buttons, Done, miniview frame).
   final Color accentColor;
 
-  /// How much of the previous tile is shown as the alignment ghost, as a
+  /// How much of the previous piece is shown as the alignment ghost, as a
   /// fraction of the preview's short edge. Should match the merger's overlap.
   final double overlapFraction;
 
@@ -66,7 +66,7 @@ class TileScanScreen extends StatefulWidget {
 
   final PlusButtonBuilder? plusButtonBuilder;
   final MiniviewBuilder? miniviewBuilder;
-  final TileHintBuilder? hintBuilder;
+  final LargeDocHintBuilder? hintBuilder;
   final CaptureButtonBuilder? captureButtonBuilder;
   final String title;
 
@@ -75,21 +75,21 @@ class TileScanScreen extends StatefulWidget {
   static Future<String?> scan(
     BuildContext context, {
     ScannerConfig config = const ScannerConfig(),
-    TileAligner aligner = const ManualPlacementAligner(),
-    TileMerger merger = const CanvasTileMerger(),
+    LargeDocAligner aligner = const ManualPlacementAligner(),
+    LargeDocMerger merger = const CanvasLargeDocMerger(),
     Color accentColor = const Color(0xFF000000),
     double overlapFraction = 0.3,
     double ghostOpacity = 0.4,
     PlusButtonBuilder? plusButtonBuilder,
     MiniviewBuilder? miniviewBuilder,
-    TileHintBuilder? hintBuilder,
+    LargeDocHintBuilder? hintBuilder,
     CaptureButtonBuilder? captureButtonBuilder,
     String title = 'Scan a large document',
   }) {
     return Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
         fullscreenDialog: true,
-        builder: (_) => TileScanScreen(
+        builder: (_) => DoclensLargeDocScreen(
           config: config,
           aligner: aligner,
           merger: merger,
@@ -107,13 +107,13 @@ class TileScanScreen extends StatefulWidget {
   }
 
   @override
-  State<TileScanScreen> createState() => _TileScanScreenState();
+  State<DoclensLargeDocScreen> createState() => _DoclensLargeDocScreenState();
 }
 
-class _TileScanScreenState extends State<TileScanScreen> {
+class _DoclensLargeDocScreenState extends State<DoclensLargeDocScreen> {
   late final DoclensController _controller =
       DoclensController(config: widget.config);
-  late final TileScanSession _session = TileScanSession(
+  late final LargeDocSession _session = LargeDocSession(
     aligner: widget.aligner,
     merger: widget.merger.merge,
   );
@@ -147,8 +147,8 @@ class _TileScanScreenState extends State<TileScanScreen> {
   /// pause/resume on every notification.
   void _syncCamera() {
     if (!_controller.isInitialized) return;
-    final live = _session.phase == TileScanPhase.empty ||
-        _session.phase == TileScanPhase.capturing;
+    final live = _session.phase == LargeDocPhase.empty ||
+        _session.phase == LargeDocPhase.capturing;
     if (_cameraLive == live) return;
     _cameraLive = live;
     (live ? _controller.resume() : _controller.pause())
@@ -160,18 +160,18 @@ class _TileScanScreenState extends State<TileScanScreen> {
   Future<void> _onCaptured(ScanResult result) async {
     if (_committing) return;
     // The very first shot starts in `empty`; move it into capturing so the
-    // root tile commits through the same path as every later fragment.
-    if (_session.phase == TileScanPhase.empty) _session.beginRootCapture();
-    if (_session.phase != TileScanPhase.capturing) return;
+    // root piece commits through the same path as every later fragment.
+    if (_session.phase == LargeDocPhase.empty) _session.beginRootCapture();
+    if (_session.phase != LargeDocPhase.capturing) return;
     _committing = true;
     try {
       final path = result.croppedImagePath ?? result.rawImagePath;
       final outcome = await _session.commitCapture(path);
-      if (outcome == TileCaptureOutcome.lowConfidence && mounted) {
+      if (outcome == LargeDocCaptureOutcome.lowConfidence && mounted) {
         _promptRetake();
       }
     } catch (_) {
-      if (_session.phase == TileScanPhase.capturing) _session.cancelCapture();
+      if (_session.phase == LargeDocPhase.capturing) _session.cancelCapture();
     } finally {
       _committing = false;
     }
@@ -224,13 +224,13 @@ class _TileScanScreenState extends State<TileScanScreen> {
       backgroundColor: Colors.black,
       body: SafeArea(
         child: switch (_session.phase) {
-          TileScanPhase.empty ||
-          TileScanPhase.capturing =>
+          LargeDocPhase.empty ||
+          LargeDocPhase.capturing =>
             _buildCapture(),
-          TileScanPhase.review => _buildReview(),
-          TileScanPhase.merging => const Center(
+          LargeDocPhase.review => _buildReview(),
+          LargeDocPhase.merging => const Center(
               child: CircularProgressIndicator(color: Colors.white)),
-          TileScanPhase.done => const SizedBox.shrink(),
+          LargeDocPhase.done => const SizedBox.shrink(),
         },
       ),
     );
@@ -252,7 +252,7 @@ class _TileScanScreenState extends State<TileScanScreen> {
           // Routes both the manual button and auto-capture into the session.
           onCapture: _onCaptured,
         ),
-        // The overlap ghost: a strip of the anchor tile pinned to the edge
+        // The overlap ghost: a strip of the anchor piece pinned to the edge
         // the new fragment must continue from.
         if (anchor != null && ghostEdge != null)
           IgnorePointer(
@@ -269,7 +269,7 @@ class _TileScanScreenState extends State<TileScanScreen> {
           child: IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
             onPressed: () {
-              if (_session.phase == TileScanPhase.capturing &&
+              if (_session.phase == LargeDocPhase.capturing &&
                   !_session.canvas.isEmpty) {
                 _session.cancelCapture();
               } else {
@@ -356,7 +356,7 @@ class _TileScanScreenState extends State<TileScanScreen> {
       _Miniview(canvas: _session.canvas, accent: widget.accentColor);
 
   Widget _defaultPlus(
-          BuildContext context, TileEdge edge, VoidCallback onTap) =>
+          BuildContext context, LargeDocEdge edge, VoidCallback onTap) =>
       _PlusButton(edge: edge, color: widget.accentColor, onTap: onTap);
 }
 
@@ -364,7 +364,7 @@ class _TileScanScreenState extends State<TileScanScreen> {
 //  Default chrome
 // =====================================================================
 
-/// Translucent slice of the previous tile, pinned to one edge of the live
+/// Translucent slice of the previous piece, pinned to one edge of the live
 /// preview so the user can slide the real page under it before shooting.
 class _GhostStrip extends StatelessWidget {
   const _GhostStrip({
@@ -375,7 +375,7 @@ class _GhostStrip extends StatelessWidget {
   });
 
   final String imagePath;
-  final TileEdge edge;
+  final LargeDocEdge edge;
   final double fraction;
   final double opacity;
 
@@ -383,22 +383,22 @@ class _GhostStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
-        final horizontal = edge == TileEdge.left || edge == TileEdge.right;
+        final horizontal = edge == LargeDocEdge.left || edge == LargeDocEdge.right;
         final stripW = horizontal ? c.maxWidth * fraction : c.maxWidth;
         final stripH = horizontal ? c.maxHeight : c.maxHeight * fraction;
         final align = switch (edge) {
-          TileEdge.left => Alignment.centerLeft,
-          TileEdge.right => Alignment.centerRight,
-          TileEdge.top => Alignment.topCenter,
-          TileEdge.bottom => Alignment.bottomCenter,
+          LargeDocEdge.left => Alignment.centerLeft,
+          LargeDocEdge.right => Alignment.centerRight,
+          LargeDocEdge.top => Alignment.topCenter,
+          LargeDocEdge.bottom => Alignment.bottomCenter,
         };
         // Show the matching slice of the anchor image (its far edge meets
         // the live frame), so content visually continues across the seam.
         final sliceAlign = switch (edge) {
-          TileEdge.left => Alignment.centerRight,
-          TileEdge.right => Alignment.centerLeft,
-          TileEdge.top => Alignment.bottomCenter,
-          TileEdge.bottom => Alignment.topCenter,
+          LargeDocEdge.left => Alignment.centerRight,
+          LargeDocEdge.right => Alignment.centerLeft,
+          LargeDocEdge.top => Alignment.bottomCenter,
+          LargeDocEdge.bottom => Alignment.topCenter,
         };
         return Align(
           alignment: align,
@@ -430,7 +430,7 @@ class _GhostStrip extends StatelessWidget {
 
 class _DefaultHint extends StatelessWidget {
   const _DefaultHint({required this.edge});
-  final TileEdge? edge;
+  final LargeDocEdge? edge;
 
   @override
   Widget build(BuildContext context) {
@@ -448,8 +448,8 @@ class _DefaultHint extends StatelessWidget {
   }
 }
 
-/// The review board: occupied grid cells render their tile; open edges of
-/// boundary tiles get a `+`.
+/// The review board: occupied grid cells render their piece; open edges of
+/// boundary pieces get a `+`.
 class _CompositeBoard extends StatelessWidget {
   const _CompositeBoard({
     required this.canvas,
@@ -458,10 +458,10 @@ class _CompositeBoard extends StatelessWidget {
     required this.onPlus,
   });
 
-  final TileCanvas canvas;
+  final LargeDocCanvas canvas;
   final Color accent;
   final PlusButtonBuilder plusBuilder;
-  final void Function(Tile anchor, TileEdge edge) onPlus;
+  final void Function(LargeDocPiece anchor, LargeDocEdge edge) onPlus;
 
   @override
   Widget build(BuildContext context) {
@@ -481,7 +481,7 @@ class _CompositeBoard extends StatelessWidget {
         double cy(int row) => top + (row - b.minRow) * cell;
 
         final children = <Widget>[];
-        for (final t in canvas.tiles) {
+        for (final t in canvas.pieces) {
           children.add(Positioned(
             left: cx(t.col),
             top: cy(t.row),
@@ -514,7 +514,7 @@ class _CompositeBoard extends StatelessWidget {
 class _PlusButton extends StatelessWidget {
   const _PlusButton(
       {required this.edge, required this.color, required this.onTap});
-  final TileEdge edge;
+  final LargeDocEdge edge;
   final Color color;
   final VoidCallback onTap;
 
@@ -539,7 +539,7 @@ class _PlusButton extends StatelessWidget {
 /// Small live map of the whole document: a shrunk version of the review grid.
 class _Miniview extends StatelessWidget {
   const _Miniview({required this.canvas, required this.accent});
-  final TileCanvas canvas;
+  final LargeDocCanvas canvas;
   final Color accent;
 
   @override
@@ -561,7 +561,7 @@ class _Miniview extends StatelessWidget {
         height: ext.rows * cell,
         child: Stack(
           children: [
-            for (final t in canvas.tiles)
+            for (final t in canvas.pieces)
               Positioned(
                 left: (t.col - b.minCol) * cell,
                 top: (t.row - b.minRow) * cell,

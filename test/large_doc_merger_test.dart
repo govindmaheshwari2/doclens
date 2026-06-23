@@ -33,10 +33,10 @@ Future<ui.Image> _decode(String path) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const merger = CanvasTileMerger(overlapFraction: 0.3);
+  const merger = CanvasLargeDocMerger(overlapFraction: 0.3);
 
-  test('single tile merges to an image of the same size', () async {
-    final canvas = TileCanvas()..addRoot(await _png(100, 60, const ui.Color(0xFFFF0000)));
+  test('single piece merges to an image of the same size', () async {
+    final canvas = LargeDocCanvas()..addRoot(await _png(100, 60, const ui.Color(0xFFFF0000)));
     final out = await merger.merge(canvas);
     expect(File(out).existsSync(), isTrue);
     final img = await _decode(out);
@@ -44,12 +44,12 @@ void main() {
     expect(img.height, 60);
   });
 
-  test('two tiles in a row span one stride wider than a single tile', () async {
-    final c = TileCanvas();
+  test('two pieces in a row span one stride wider than a single piece', () async {
+    final c = LargeDocCanvas();
     final root = c.addRoot(await _png(100, 60, const ui.Color(0xFFFF0000)));
     c.addAdjacent(
       anchor: root,
-      edge: TileEdge.right,
+      edge: LargeDocEdge.right,
       imagePath: await _png(100, 60, const ui.Color(0xFF00FF00)),
     );
     final out = await merger.merge(c);
@@ -60,13 +60,13 @@ void main() {
   });
 
   test('negative refined shift is not clipped off-canvas', () async {
-    final c = TileCanvas();
+    final c = LargeDocCanvas();
     final root = c.addRoot(await _png(100, 60, const ui.Color(0xFFFF0000)));
-    // Nudge the second tile up by 10px; the composite must grow to include it
+    // Nudge the second piece up by 10px; the composite must grow to include it
     // rather than clipping at y=0.
     c.addAdjacent(
       anchor: root,
-      edge: TileEdge.right,
+      edge: LargeDocEdge.right,
       imagePath: await _png(100, 60, const ui.Color(0xFF00FF00)),
       refinedShift: const ui.Offset(0, -10),
     );
