@@ -13,6 +13,10 @@ The detected document outline — a 4-corner quad — is streamed to Dart on eve
 - **Multi-page / batch scanning** — `DoclensMultiScreen` keeps the camera
   open, collects a stack of pages with a thumbnail rail, and returns them
   in order; reorder and delete from a built-in page manager.
+- **Large-document scan** — `DoclensLargeDocScreen` captures a document too
+  big for one frame as overlapping pieces (tap a `+` on any edge, line the
+  next shot up against an overlap ghost, watch a miniview fill in), then
+  stitches them into a single image.
 - **Auto-capture with confirmation** — fires once the document is framed
   and held still, with a brief "hold still" window you can abort.
 - **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
@@ -98,6 +102,40 @@ that **reorders** (drag) and **deletes** pages, and closing with
 uncommitted pages prompts a discard confirmation. Pass `maxPages` to cap
 the batch; every other `DoclensScreen` knob (enhancement, auto-orientation,
 overlay style, review builders, …) carries over.
+
+**Large documents.** `DoclensLargeDocScreen` is the drop-in for a page too
+big to fit in one frame — a long contract, a poster, a whiteboard. The user
+captures one piece, taps a `+` on any edge of the composite, and lines the
+next shot up against a translucent **overlap ghost** of the previous piece;
+a **miniview** shows the whole document forming. On **Done** the pieces are
+stitched into one image and the route returns its path:
+
+```dart
+final String? path = await DoclensLargeDocScreen.scan(context);
+if (path == null) return;              // user cancelled
+// `path` is the stitched composite image on disk.
+```
+
+Every piece of chrome is overridable, true to the package's "you own the
+UI" stance — `plusButtonBuilder`, `miniviewBuilder`, `hintBuilder`,
+`captureButtonBuilder`, plus `accentColor`, `overlapFraction`, and
+`ghostOpacity`:
+
+```dart
+DoclensLargeDocScreen(
+  accentColor: Theme.of(context).colorScheme.primary,
+  overlapFraction: 0.3,                // how much of the last piece to ghost
+  hintBuilder: (ctx, edge) => MyCoachHint(edge: edge),
+  miniviewBuilder: (ctx, canvas) => MyPageMap(canvas: canvas),
+)
+```
+
+The capture flow is built on injectable pieces you can also use directly for
+a fully custom UI: `LargeDocCanvas` (the 2-D piece grid), `LargeDocSession`
+(the capture → review → merge state machine), `LargeDocAligner` (overlap
+correction; the default `ManualPlacementAligner` trusts the hand alignment),
+and `LargeDocMerger` (`CanvasLargeDocMerger` pastes pieces at their grid
+slots). Swap in your own aligner or merger via the constructor.
 
 ### 2. Custom UI — full control with `DoclensView`
 
@@ -354,6 +392,13 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
   `DoclensMultiScreen.scan(ctx)` awaits a `List<ScanResult>?`; or mount the
   widget directly and use `onComplete`. Thumbnail rail, reorder/delete
   manager, `maxPages` cap.
+- **`DoclensLargeDocScreen`** — drop-in scanner for a document too big for
+  one frame. `DoclensLargeDocScreen.scan(ctx)` awaits the stitched image
+  path (`String?`). Captures overlapping pieces via a `+`-per-edge UI with
+  an overlap ghost and a miniview. Overridable chrome (`plusButtonBuilder`,
+  `miniviewBuilder`, `hintBuilder`, `captureButtonBuilder`) and injectable
+  `LargeDocAligner` / `LargeDocMerger`; the underlying `LargeDocCanvas` and
+  `LargeDocSession` are exported for fully custom UIs.
 - **`DoclensController`** — owns a session. Streams: `quadStream`,
   `statusStream`, `autoCaptureStream`, `lowLightStream`,
   `previewSizeStream`. Methods: `initialize()`, `capture()`,
