@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../controller.dart';
 import '../models.dart';
+import '../quad.dart';
 import '../large_doc/large_doc_aligner.dart';
 import '../large_doc/large_doc_canvas.dart';
 import '../large_doc/large_doc_merger.dart';
@@ -41,7 +43,7 @@ class DoclensLargeDocScreen extends StatefulWidget {
     this.aligner = const ManualPlacementAligner(),
     this.merger = const CanvasLargeDocMerger(),
     this.accentColor = const Color(0xFF000000),
-    this.overlapFraction = 0.3,
+    this.overlapFraction = 0.15,
     this.ghostOpacity = 0.4,
     this.plusButtonBuilder,
     this.miniviewBuilder,
@@ -78,7 +80,7 @@ class DoclensLargeDocScreen extends StatefulWidget {
     LargeDocAligner aligner = const ManualPlacementAligner(),
     LargeDocMerger merger = const CanvasLargeDocMerger(),
     Color accentColor = const Color(0xFF000000),
-    double overlapFraction = 0.3,
+    double overlapFraction = 0.15,
     double ghostOpacity = 0.4,
     PlusButtonBuilder? plusButtonBuilder,
     MiniviewBuilder? miniviewBuilder,
@@ -118,15 +120,24 @@ class _DoclensLargeDocScreenState extends State<DoclensLargeDocScreen> {
     merger: widget.merger.merge,
   );
 
+  /// Latest live document quad (normalized `[0,1]`), used to pin the overlap
+  /// ghost to the page the user is framing rather than the whole preview.
+  Quad? _liveQuad;
+  StreamSubscription<Quad?>? _quadSub;
+
   @override
   void initState() {
     super.initState();
     _controller.initialize().catchError((Object _) {});
+    _quadSub = _controller.quadStream.listen((q) {
+      if (mounted) setState(() => _liveQuad = q);
+    });
     _session.addListener(_onSession);
   }
 
   @override
   void dispose() {
+    _quadSub?.cancel();
     _session.removeListener(_onSession);
     _controller.dispose();
     _session.dispose();
@@ -255,13 +266,12 @@ class _DoclensLargeDocScreenState extends State<DoclensLargeDocScreen> {
         // The overlap ghost: a strip of the anchor piece pinned to the edge
         // the new fragment must continue from.
         if (anchor != null && ghostEdge != null)
-          IgnorePointer(
-            child: _GhostStrip(
-              imagePath: anchor.imagePath,
-              edge: ghostEdge,
-              fraction: widget.overlapFraction,
-              opacity: widget.ghostOpacity,
-            ),
+          _GhostStrip(
+            imagePath: anchor.imagePath,
+            edge: ghostEdge,
+            fraction: widget.overlapFraction,
+            opacity: widget.ghostOpacity,
+            liveQuad: _liveQuad,
           ),
         Positioned(
           top: 12,
@@ -364,67 +374,114 @@ class _DoclensLargeDocScreenState extends State<DoclensLargeDocScreen> {
 //  Default chrome
 // =====================================================================
 
-/// Translucent slice of the previous piece, pinned to one edge of the live
-/// preview so the user can slide the real page under it before shooting.
+/// Translucent slice of the previous piece, pinned to one edge of the page
+/// the user is framing so they can slide the real page under it before
+/// shooting.
+///
+/// When a live document quad is detected, the strip is sized and placed over
+/// that quad's bounding box — so the ghost overlays the actual page region and
+/// lines up at the same scale, instead of being pinned to the whole preview
+/// frame (which includes background the user isn't trying to match). Without a
+/// quad it falls back to the full preview edge.
 class _GhostStrip extends StatelessWidget {
   const _GhostStrip({
     required this.imagePath,
     required this.edge,
     required this.fraction,
     required this.opacity,
+    this.liveQuad,
   });
 
   final String imagePath;
   final LargeDocEdge edge;
   final double fraction;
   final double opacity;
+  final Quad? liveQuad;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final horizontal = edge == LargeDocEdge.left || edge == LargeDocEdge.right;
-        final stripW = horizontal ? c.maxWidth * fraction : c.maxWidth;
-        final stripH = horizontal ? c.maxHeight : c.maxHeight * fraction;
-        final align = switch (edge) {
-          LargeDocEdge.left => Alignment.centerLeft,
-          LargeDocEdge.right => Alignment.centerRight,
-          LargeDocEdge.top => Alignment.topCenter,
-          LargeDocEdge.bottom => Alignment.bottomCenter,
-        };
-        // Show the matching slice of the anchor image (its far edge meets
-        // the live frame), so content visually continues across the seam.
-        final sliceAlign = switch (edge) {
-          LargeDocEdge.left => Alignment.centerRight,
-          LargeDocEdge.right => Alignment.centerLeft,
-          LargeDocEdge.top => Alignment.bottomCenter,
-          LargeDocEdge.bottom => Alignment.topCenter,
-        };
-        return Align(
-          alignment: align,
-          child: SizedBox(
-            width: stripW,
-            height: stripH,
-            child: Opacity(
-              opacity: opacity,
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: sliceAlign,
-                  maxWidth: c.maxWidth,
-                  maxHeight: c.maxHeight,
-                  child: Image.file(
-                    File(imagePath),
-                    fit: BoxFit.cover,
-                    width: c.maxWidth,
-                    height: c.maxHeight,
+    // Fill the stack, then position the strip ourselves against the page box —
+    // the geometry depends on the live quad, which a plain `Positioned` can't
+    // express.
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final preview = Size(c.maxWidth, c.maxHeight);
+            // Box to pin the ghost against: the live page if detected, else
+            // the whole preview.
+            final box = _quadBounds(liveQuad, preview) ?? Offset.zero & preview;
+
+            final horizontal =
+                edge == LargeDocEdge.left || edge == LargeDocEdge.right;
+            final stripW = horizontal ? box.width * fraction : box.width;
+            final stripH = horizontal ? box.height : box.height * fraction;
+            final left = switch (edge) {
+              LargeDocEdge.left || LargeDocEdge.top || LargeDocEdge.bottom =>
+                box.left,
+              LargeDocEdge.right => box.right - stripW,
+            };
+            final top = switch (edge) {
+              LargeDocEdge.left || LargeDocEdge.right || LargeDocEdge.top =>
+                box.top,
+              LargeDocEdge.bottom => box.bottom - stripH,
+            };
+
+            // Show the matching slice of the anchor image (its far edge meets
+            // the seam), so content visually continues across the join. The
+            // image fills the whole box, then is clipped to the strip.
+            final sliceAlign = switch (edge) {
+              LargeDocEdge.left => Alignment.centerRight,
+              LargeDocEdge.right => Alignment.centerLeft,
+              LargeDocEdge.top => Alignment.bottomCenter,
+              LargeDocEdge.bottom => Alignment.topCenter,
+            };
+            return Stack(
+              children: [
+                Positioned(
+                  left: left,
+                  top: top,
+                  width: stripW,
+                  height: stripH,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: ClipRect(
+                      child: OverflowBox(
+                        alignment: sliceAlign,
+                        maxWidth: box.width,
+                        maxHeight: box.height,
+                        child: Image.file(
+                          File(imagePath),
+                          fit: BoxFit.cover,
+                          width: box.width,
+                          height: box.height,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ),
-        );
-      },
+              ],
+            );
+          },
+        ),
+      ),
     );
+  }
+
+  /// Axis-aligned bounding box of [quad] (normalized `[0,1]`) in preview
+  /// pixels, or `null` when no quad is available.
+  static Rect? _quadBounds(Quad? quad, Size preview) {
+    if (quad == null) return null;
+    final px = quad.scaleToSize(preview).points;
+    var minX = px.first.dx, maxX = px.first.dx;
+    var minY = px.first.dy, maxY = px.first.dy;
+    for (final p in px) {
+      if (p.dx < minX) minX = p.dx;
+      if (p.dx > maxX) maxX = p.dx;
+      if (p.dy < minY) minY = p.dy;
+      if (p.dy > maxY) maxY = p.dy;
+    }
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
   }
 }
 

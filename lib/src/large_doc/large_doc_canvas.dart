@@ -13,11 +13,11 @@ extension LargeDocEdgeGeometry on LargeDocEdge {
   /// Integer grid step applied to a piece's [LargeDocPiece.col]/[LargeDocPiece.row] when a new
   /// piece is added off this edge. The root piece sits at `(0, 0)`; growing
   /// `right` increments the column, growing `down`/`bottom` the row.
-  Point<int> get delta => switch (this) {
-        LargeDocEdge.left => const Point(-1, 0),
-        LargeDocEdge.right => const Point(1, 0),
-        LargeDocEdge.top => const Point(0, -1),
-        LargeDocEdge.bottom => const Point(0, 1),
+  math.Point<int> get delta => switch (this) {
+        LargeDocEdge.left => const math.Point(-1, 0),
+        LargeDocEdge.right => const math.Point(1, 0),
+        LargeDocEdge.top => const math.Point(0, -1),
+        LargeDocEdge.bottom => const math.Point(0, 1),
       };
 
   /// The opposite edge. When a capture extends the composite [right], the
@@ -54,7 +54,7 @@ class LargeDocPiece {
   final int row;
   Offset refinedShift;
 
-  Point<int> get gridPos => Point(col, row);
+  math.Point<int> get gridPos => math.Point(col, row);
 
   LargeDocPiece copyWith({String? imagePath, Offset? refinedShift}) => LargeDocPiece(
         id: id,

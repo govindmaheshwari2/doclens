@@ -21,7 +21,7 @@ abstract class LargeDocMerger {
 /// composite to PNG in the system temp dir, and return its path.
 class CanvasLargeDocMerger implements LargeDocMerger {
   const CanvasLargeDocMerger({
-    this.overlapFraction = 0.3,
+    this.overlapFraction = 0.15,
     this.background = const ui.Color(0xFFFFFFFF),
   }) : assert(overlapFraction >= 0 && overlapFraction < 1);
 
