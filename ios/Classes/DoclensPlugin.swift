@@ -80,6 +80,8 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
             let args = call.arguments as? [String: Any] ?? [:]
             let quality = (args["jpegQuality"] as? Int) ?? 100
             nativeUIScanner.present(jpegQuality: quality, result: result)
+        case "detectInImage":
+            handleDetectInImage(call: call, result: result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -157,6 +159,36 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
                                         message: error.localizedDescription,
                                         details: nil))
                 }
+            }
+        }
+    }
+
+    private func handleDetectInImage(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any],
+              let path = args["imagePath"] as? String else {
+            result(FlutterError(code: "capture_failed",
+                                message: "Invalid detectInImage args", details: nil))
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Bake EXIF orientation into the pixels so the detected quad and
+            // reported size live in the same upright space the warp uses.
+            guard let img = UIImage(contentsOfFile: path),
+                  let cg = img.uprightCGImage() else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "capture_failed",
+                                        message: "Cannot read image at \(path)",
+                                        details: nil))
+                }
+                return
+            }
+            let size = CGSize(width: cg.width, height: cg.height)
+            DocumentDetector.detect(cgImage: cg) { quad in
+                let payload: [String: Any] = [
+                    "quad": quad?.toMap() ?? NSNull(),
+                    "imageSize": [Double(size.width), Double(size.height)],
+                ]
+                DispatchQueue.main.async { result(payload) }
             }
         }
     }

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'ocr_sheet.dart';
 import 'styles/branded_style.dart';
+import 'styles/gallery_import_style.dart';
 import 'styles/native_os_style.dart';
 
 void main() => runApp(const ExampleApp());
@@ -226,6 +227,23 @@ class ShowroomHome extends StatelessWidget {
         preview: const _NativePreview(),
         onTap: (ctx) => Navigator.of(ctx).push(
           MaterialPageRoute<void>(builder: (_) => const NativeOSScanner()),
+        ),
+      ),
+      _StyleEntry(
+        index: '06',
+        eyebrow: 'GALLERY IMPORT',
+        title: 'Import a photo',
+        subtitle: 'Pick an existing photo from the gallery, then run the same '
+            'detect → edit-corners → warp pipeline on it. No camera needed.',
+        tags: const [
+          'detectInImage()',
+          'EditCornersScreen',
+          'warpImage()',
+        ],
+        accent: _kRust,
+        preview: const _GalleryPreview(),
+        onTap: (ctx) => Navigator.of(ctx).push(
+          MaterialPageRoute<void>(builder: (_) => const GalleryImportScanner()),
         ),
       ),
     ];
@@ -1008,6 +1026,38 @@ class _NativePreview extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GalleryPreview extends StatelessWidget {
+  const _GalleryPreview();
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const _MiniDoc(skew: 0.0, opacity: 0.92),
+        Positioned.fill(
+          child: CustomPaint(painter: _QuadBracketsPainter(color: _kRust)),
+        ),
+        // A small "photos" badge to signal the source is the gallery, not
+        // the live camera.
+        Positioned(
+          top: 8,
+          right: 8,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+            child: const Icon(Icons.photo_library_outlined,
+                size: 12, color: Colors.white),
           ),
         ),
       ],

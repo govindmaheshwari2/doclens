@@ -181,6 +181,31 @@ class MethodChannelDoclens extends DoclensPlatform {
     }
   }
 
+  @override
+  Future<ImageDetection?> detectInImage({required String imagePath}) async {
+    try {
+      final raw = await _method.invokeMethod<Map<dynamic, dynamic>>(
+        'detectInImage',
+        {'imagePath': imagePath},
+      );
+      if (raw == null) return null;
+      final sizeRaw = raw['imageSize'];
+      if (sizeRaw is! List || sizeRaw.length < 2) {
+        throw ScannerCaptureException('Malformed detectInImage payload: $raw');
+      }
+      final quadMap = raw['quad'];
+      return ImageDetection(
+        quad: quadMap == null ? null : Quad.fromMap(quadMap as Map),
+        imageSize: Size(
+          (sizeRaw[0] as num).toDouble(),
+          (sizeRaw[1] as num).toDouble(),
+        ),
+      );
+    } on PlatformException catch (e) {
+      throw _translate(e);
+    }
+  }
+
   ScannerException _translate(PlatformException e) {
     switch (e.code) {
       case 'permission_denied':
