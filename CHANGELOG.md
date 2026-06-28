@@ -1,5 +1,24 @@
 ## Unreleased
 
+**Large-document scan — capture a document too big for one frame**
+
+- New `DoclensLargeDocScreen` lets the user build one document out of several
+  overlapping captures: shoot a fragment, tap a `+` on any edge of the
+  growing composite, and line the next shot up against a translucent
+  **overlap ghost** of the previous piece. A **miniview** shows the whole
+  document taking shape; *Done* stitches the pieces into a single image.
+  Supports long pages (a row/column), L-shapes, and 2×2 blocks.
+- True to the package's "you own the UI" stance, every piece of chrome is
+  overridable — `plusButtonBuilder`, `miniviewBuilder`, `hintBuilder`,
+  `captureButtonBuilder`, plus `accentColor`, `overlapFraction`, and
+  `ghostOpacity`. The capture pipeline, state machine, grid model,
+  alignment, and stitching are all injectable.
+- Underlying pieces are exported for custom UIs: `LargeDocCanvas` (2-D grid
+  placement), `LargeDocSession` (the capture→review→merge state machine),
+  `LargeDocAligner` (overlap-band correction; default `ManualPlacementAligner`
+  trusts the hand alignment), and `LargeDocMerger` (`CanvasLargeDocMerger` pastes
+  pieces at their grid slots — seam feathering is a future step).
+
 **Gallery import — detect → edit → warp on an existing photo**
 
 - New `DoclensController.detectInImage(path)` (and the underlying
