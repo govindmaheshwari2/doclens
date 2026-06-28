@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'ocr_sheet.dart';
 import 'styles/branded_style.dart';
+import 'styles/gallery_import_style.dart';
 import 'styles/native_os_style.dart';
 
 void main() => runApp(const ExampleApp());
@@ -189,6 +190,30 @@ class ShowroomHome extends StatelessWidget {
       ),
       _StyleEntry(
         index: '04',
+        eyebrow: 'PACKAGE UI',
+        title: 'Large-document scan',
+        subtitle:
+            "Capture a document too big for one frame. Shoot a piece, tap a + "
+            'on any edge, line the next shot up against the overlap ghost; a '
+            'miniview shows the whole page forming, then it stitches to one '
+            'image.',
+        tags: const [
+          'DoclensLargeDocScreen.scan()',
+          'overlap ghost',
+          'auto-stitch',
+        ],
+        accent: _kRust,
+        preview: const _LargeDocPreview(),
+        onTap: (ctx) async {
+          final path = await DoclensLargeDocScreen.scan(ctx);
+          if (path == null || !ctx.mounted) return;
+          await Navigator.of(ctx).push<void>(
+            MaterialPageRoute(builder: (_) => _ReturnedLargeDoc(path: path)),
+          );
+        },
+      ),
+      _StyleEntry(
+        index: '05',
         eyebrow: 'OS NATIVE',
         title: 'System scanner',
         subtitle: 'Hand off to the OS. Vision document camera on iOS, ML Kit '
@@ -202,6 +227,23 @@ class ShowroomHome extends StatelessWidget {
         preview: const _NativePreview(),
         onTap: (ctx) => Navigator.of(ctx).push(
           MaterialPageRoute<void>(builder: (_) => const NativeOSScanner()),
+        ),
+      ),
+      _StyleEntry(
+        index: '06',
+        eyebrow: 'GALLERY IMPORT',
+        title: 'Import a photo',
+        subtitle: 'Pick an existing photo from the gallery, then run the same '
+            'detect → edit-corners → warp pipeline on it. No camera needed.',
+        tags: const [
+          'detectInImage()',
+          'EditCornersScreen',
+          'warpImage()',
+        ],
+        accent: _kRust,
+        preview: const _GalleryPreview(),
+        onTap: (ctx) => Navigator.of(ctx).push(
+          MaterialPageRoute<void>(builder: (_) => const GalleryImportScanner()),
         ),
       ),
     ];
@@ -711,6 +753,110 @@ class _DropInPreview extends StatelessWidget {
   }
 }
 
+class _LargeDocPreview extends StatelessWidget {
+  const _LargeDocPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget frag(double opacity) => Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF4F0E8).withValues(alpha: opacity),
+            borderRadius: BorderRadius.circular(1.5),
+            border: Border.all(color: const Color(0xFF14130F), width: 0.5),
+          ),
+        );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Center(
+          child: SizedBox(
+            width: 96,
+            height: 116,
+            // A 2x2 block of fragments — the composite taking shape.
+            child: GridView.count(
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 3,
+              crossAxisSpacing: 3,
+              children: [
+                frag(0.95),
+                frag(0.6),
+                frag(0.6),
+                frag(0.35),
+              ],
+            ),
+          ),
+        ),
+        // A `+` affordance on the open right edge.
+        Positioned(
+          right: 28,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: const BoxDecoration(
+                color: _kRust,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.add, size: 13, color: Colors.white),
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: CustomPaint(painter: _QuadBracketsPainter(color: _kInkBlue)),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReturnedLargeDoc extends StatelessWidget {
+  const _ReturnedLargeDoc({required this.path});
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF14130F),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+              child: Row(
+                children: [
+                  _OverlayIconButton(
+                    icon: Icons.arrow_back,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'STITCHED COMPOSITE',
+                    style: _mono(
+                      size: 10.5,
+                      color: Colors.white,
+                      weight: FontWeight.w700,
+                      letterSpacing: 0.28,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: InteractiveViewer(
+                maxScale: 6,
+                child: Center(child: Image.file(File(path))),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _BrandedPreview extends StatelessWidget {
   const _BrandedPreview();
   @override
@@ -880,6 +1026,38 @@ class _NativePreview extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GalleryPreview extends StatelessWidget {
+  const _GalleryPreview();
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const _MiniDoc(skew: 0.0, opacity: 0.92),
+        Positioned.fill(
+          child: CustomPaint(painter: _QuadBracketsPainter(color: _kRust)),
+        ),
+        // A small "photos" badge to signal the source is the gallery, not
+        // the live camera.
+        Positioned(
+          top: 8,
+          right: 8,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+            ),
+            child: const Icon(Icons.photo_library_outlined,
+                size: 12, color: Colors.white),
           ),
         ),
       ],

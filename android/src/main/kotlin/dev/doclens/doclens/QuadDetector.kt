@@ -1,5 +1,10 @@
 package dev.doclens.doclens
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import kotlin.math.max
+import kotlin.math.min
+
 
 /**
  * Document quadrilateral detector that runs entirely on a downscaled
@@ -28,6 +33,58 @@ object QuadDetector {
         if (hull.size < 4) return null
         val quad = approximateQuad(hull) ?: return null
         return normalizeAndOrder(quad, width.toFloat(), height.toFloat())
+    }
+
+    /**
+     * Run [detect] on a still image already on disk (e.g. one imported from
+     * the gallery). Decodes the file, bakes in any EXIF orientation, then
+     * detects on a downscaled luma copy — the normalized quad is
+     * resolution-independent, so the downscale only affects speed.
+     *
+     * Returns a map of `{ "quad": <normalized quad map> | null, "imageSize":
+     * [width, height] }` in the EXIF-upright pixel space (the same space the
+     * warp operates in). Throws [ScannerException.CaptureFailed] when the file
+     * cannot be decoded.
+     */
+    fun detectInFile(path: String): Map<String, Any?> {
+        val raw = BitmapFactory.decodeFile(path)
+            ?: throw ScannerException.CaptureFailed("Decode failed: $path")
+        val upright = ExifRotator.rotated(raw, path)
+        try {
+            val w = upright.width
+            val h = upright.height
+            // Downscale for detection; the largest side caps at ~480 px. The
+            // detector emits normalized [0,1] coords, so this is purely a
+            // speed/memory optimisation and doesn't affect the result space.
+            val target = 480
+            val scale = min(1.0, target.toDouble() / max(w, h))
+            val dw = max(16, (w * scale).toInt())
+            val dh = max(16, (h * scale).toInt())
+            val small = if (dw == w && dh == h) upright
+                        else Bitmap.createScaledBitmap(upright, dw, dh, true)
+            val pixels = IntArray(dw * dh)
+            small.getPixels(pixels, 0, dw, 0, 0, dw, dh)
+            if (small !== upright) small.recycle()
+
+            val luma = ByteArray(dw * dh)
+            for (i in pixels.indices) {
+                val p = pixels[i]
+                val r = (p shr 16) and 0xFF
+                val g = (p shr 8) and 0xFF
+                val b = p and 0xFF
+                // Rec.601 luma, integer weights (77/150/29 ≈ /256).
+                luma[i] = (((r * 77 + g * 150 + b * 29) shr 8) and 0xFF).toByte()
+            }
+
+            val quad = detect(luma, dw, dh)
+            return mapOf(
+                "quad" to quad?.toMap(),
+                "imageSize" to listOf(w.toDouble(), h.toDouble()),
+            )
+        } finally {
+            if (upright !== raw) upright.recycle()
+            raw.recycle()
+        }
     }
 
     private fun buildMask(luma: ByteArray, @Suppress("UNUSED_PARAMETER") w: Int, @Suppress("UNUSED_PARAMETER") h: Int): BooleanArray? {

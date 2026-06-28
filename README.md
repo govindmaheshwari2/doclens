@@ -13,6 +13,10 @@ The detected document outline — a 4-corner quad — is streamed to Dart on eve
 - **Multi-page / batch scanning** — `DoclensMultiScreen` keeps the camera
   open, collects a stack of pages with a thumbnail rail, and returns them
   in order; reorder and delete from a built-in page manager.
+- **Large-document scan** — `DoclensLargeDocScreen` captures a document too
+  big for one frame as overlapping pieces (tap a `+` on any edge, line the
+  next shot up against an overlap ghost, watch a miniview fill in), then
+  stitches them into a single image.
 - **Auto-capture with confirmation** — fires once the document is framed
   and held still, with a brief "hold still" window you can abort.
 - **Continuous autofocus + tap-to-focus**, programmatic focus, flash/torch
@@ -98,6 +102,40 @@ that **reorders** (drag) and **deletes** pages, and closing with
 uncommitted pages prompts a discard confirmation. Pass `maxPages` to cap
 the batch; every other `DoclensScreen` knob (enhancement, auto-orientation,
 overlay style, review builders, …) carries over.
+
+**Large documents.** `DoclensLargeDocScreen` is the drop-in for a page too
+big to fit in one frame — a long contract, a poster, a whiteboard. The user
+captures one piece, taps a `+` on any edge of the composite, and lines the
+next shot up against a translucent **overlap ghost** of the previous piece;
+a **miniview** shows the whole document forming. On **Done** the pieces are
+stitched into one image and the route returns its path:
+
+```dart
+final String? path = await DoclensLargeDocScreen.scan(context);
+if (path == null) return;              // user cancelled
+// `path` is the stitched composite image on disk.
+```
+
+Every piece of chrome is overridable, true to the package's "you own the
+UI" stance — `plusButtonBuilder`, `miniviewBuilder`, `hintBuilder`,
+`captureButtonBuilder`, plus `accentColor`, `overlapFraction`, and
+`ghostOpacity`:
+
+```dart
+DoclensLargeDocScreen(
+  accentColor: Theme.of(context).colorScheme.primary,
+  overlapFraction: 0.3,                // how much of the last piece to ghost
+  hintBuilder: (ctx, edge) => MyCoachHint(edge: edge),
+  miniviewBuilder: (ctx, canvas) => MyPageMap(canvas: canvas),
+)
+```
+
+The capture flow is built on injectable pieces you can also use directly for
+a fully custom UI: `LargeDocCanvas` (the 2-D piece grid), `LargeDocSession`
+(the capture → review → merge state machine), `LargeDocAligner` (overlap
+correction; the default `ManualPlacementAligner` trusts the hand alignment),
+and `LargeDocMerger` (`CanvasLargeDocMerger` pastes pieces at their grid
+slots). Swap in your own aligner or merger via the constructor.
 
 ### 2. Custom UI — full control with `DoclensView`
 
@@ -246,6 +284,44 @@ the finger so the point being placed is never hidden. It is on by default
 pass a `magnifierBuilder` to supply a custom loupe widget (return `null`
 to fall back to the bundled one).
 
+## Gallery import — run the pipeline on an existing photo
+
+The whole **detect → edit → warp** flow also works without the camera, on a
+photo the user already has. `detectInImage` runs the same native edge
+detector the live preview uses on a still image on disk, so you can pick a
+photo from the gallery and dewarp it like a fresh capture:
+
+```dart
+// Pick a photo however you like (e.g. the `image_picker` package).
+final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+if (picked == null) return;
+
+// 1. Detect — native edge detection on the still image.
+final detection = await controller.detectInImage(picked.path);
+if (detection == null) return; // couldn't read the image
+
+// 2. Edit — seed EditCornersScreen with the detected corners (or a 10%
+//    inset when nothing was found), 3. Warp on save.
+final warpedPath = await Navigator.of(context).push<String>(
+  MaterialPageRoute(
+    builder: (_) => EditCornersScreen(
+      imagePath: picked.path,
+      initialQuad: detection.quadIn,   // pixel-space, ready to use
+      imageSize: detection.imageSize,
+      onSave: (quad) => controller.warpImage(picked.path, quad),
+    ),
+  ),
+);
+```
+
+`detectInImage` returns an `ImageDetection` with the quad in normalized
+`[0,1]` coords (or `null` when nothing document-like is found) plus the
+image's EXIF-upright pixel size; `quadIn` gives you the same quad already
+scaled into pixel coordinates. Like `warpImage` / `rotateImage` /
+`recognizeText`, it's a pure file operation — no `initialize()` or camera
+session required. The example app's **Gallery import** entry shows the full
+flow end to end.
+
 ## Image enhancement & shadow removal
 
 By default the cropped output is a pure dewarp — the original pixels,
@@ -354,11 +430,19 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
   `DoclensMultiScreen.scan(ctx)` awaits a `List<ScanResult>?`; or mount the
   widget directly and use `onComplete`. Thumbnail rail, reorder/delete
   manager, `maxPages` cap.
+- **`DoclensLargeDocScreen`** — drop-in scanner for a document too big for
+  one frame. `DoclensLargeDocScreen.scan(ctx)` awaits the stitched image
+  path (`String?`). Captures overlapping pieces via a `+`-per-edge UI with
+  an overlap ghost and a miniview. Overridable chrome (`plusButtonBuilder`,
+  `miniviewBuilder`, `hintBuilder`, `captureButtonBuilder`) and injectable
+  `LargeDocAligner` / `LargeDocMerger`; the underlying `LargeDocCanvas` and
+  `LargeDocSession` are exported for fully custom UIs.
 - **`DoclensController`** — owns a session. Streams: `quadStream`,
   `statusStream`, `autoCaptureStream`, `lowLightStream`,
   `previewSizeStream`. Methods: `initialize()`, `capture()`,
-  `warpImage()`, `rotateImage()`, `focusAt()`, `setFlashMode()`,
-  `cycleFlashMode()`, `switchCamera()`, `pause()`, `resume()`, `dispose()`.
+  `warpImage()`, `rotateImage()`, `detectInImage()`, `focusAt()`,
+  `setFlashMode()`, `cycleFlashMode()`, `switchCamera()`, `pause()`,
+  `resume()`, `dispose()`.
 - **`DoclensView`** — Flutter widget rendering preview + your overlays.
   Builder slots: `overlayBuilder`, `captureButtonBuilder`,
   `flashButtonBuilder`, `lowLightHintBuilder`, `debugOverlayBuilder`.
@@ -374,6 +458,12 @@ The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Googl
   `DoclensController` or directly on `DoclensPlatform.instance`; needs no
   camera session. Returns an **`OcrResult`** (`text`, `blocks`, `lines`,
   `imageSize`) with per-block / per-line bounding boxes and confidence.
+- **`detectInImage()`** — run native edge detection on a still image (e.g.
+  a gallery import). On `DoclensController` or directly on
+  `DoclensPlatform.instance`; needs no camera session. Returns an
+  **`ImageDetection`** (`quad`, `imageSize`, `quadIn`) to feed
+  `EditCornersScreen` + `warpImage` — the full detect → edit → warp pipeline
+  off a picked photo.
 - **`scanWithNativeUI()`** on `DoclensPlatform.instance` — full
   native-modal scan, returns `List<String>?`.
 - **`ScannerConfig`** — every feature flag with a sensible default

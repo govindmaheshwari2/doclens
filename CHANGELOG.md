@@ -1,3 +1,41 @@
+## Unreleased
+
+**Large-document scan — capture a document too big for one frame**
+
+- New `DoclensLargeDocScreen` lets the user build one document out of several
+  overlapping captures: shoot a fragment, tap a `+` on any edge of the
+  growing composite, and line the next shot up against a translucent
+  **overlap ghost** of the previous piece. A **miniview** shows the whole
+  document taking shape; *Done* stitches the pieces into a single image.
+  Supports long pages (a row/column), L-shapes, and 2×2 blocks.
+- True to the package's "you own the UI" stance, every piece of chrome is
+  overridable — `plusButtonBuilder`, `miniviewBuilder`, `hintBuilder`,
+  `captureButtonBuilder`, plus `accentColor`, `overlapFraction`, and
+  `ghostOpacity`. The capture pipeline, state machine, grid model,
+  alignment, and stitching are all injectable.
+- Underlying pieces are exported for custom UIs: `LargeDocCanvas` (2-D grid
+  placement), `LargeDocSession` (the capture→review→merge state machine),
+  `LargeDocAligner` (overlap-band correction; default `ManualPlacementAligner`
+  trusts the hand alignment), and `LargeDocMerger` (`CanvasLargeDocMerger` pastes
+  pieces at their grid slots — seam feathering is a future step).
+
+**Gallery import — detect → edit → warp on an existing photo**
+
+- New `DoclensController.detectInImage(path)` (and the underlying
+  `DoclensPlatform.detectInImage`) runs the native edge detector — the same
+  one that powers the live preview — on a still image already on disk, such
+  as one the user imported from the gallery. It returns an `ImageDetection`
+  with the detected quad in normalized `[0,1]` coords (or `null` when nothing
+  document-like is found) plus the image's EXIF-upright pixel size.
+- This makes the package's whole pipeline available without the camera: feed
+  `ImageDetection.imageSize` and `ImageDetection.quadIn` to
+  `EditCornersScreen`, then `warpImage` with the user-adjusted corners.
+  `ImageDetection.quadIn` falls back to a 10%-inset rectangle so there are
+  always draggable corners to start from. It's a pure file operation — no
+  `initialize()` / camera session required.
+- The example app gains a "Gallery import" entry demonstrating the full
+  detect → edit → warp flow on a picked photo.
+
 ## 0.0.6
 
 **Sharpness-gated auto-capture**

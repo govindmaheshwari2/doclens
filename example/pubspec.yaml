@@ -32,6 +32,10 @@ dependencies:
 
   url_launcher: ^6.2.5
 
+  # Used by the "Gallery import" showroom entry to pick a photo from the
+  # device gallery before running the detect → edit → warp pipeline on it.
+  image_picker: ^1.1.2
+
 dev_dependencies:
   integration_test:
     sdk: flutter

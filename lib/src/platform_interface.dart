@@ -111,4 +111,17 @@ abstract class DoclensPlatform extends PlatformInterface {
     bool allowGalleryImport = false,
     int jpegQuality = 100,
   });
+
+  /// Run document edge-detection on a still image already on disk — the same
+  /// native detector that powers the live preview, but on a single picked /
+  /// imported photo (e.g. from the gallery) rather than a camera frame.
+  ///
+  /// Returns an [ImageDetection] with the detected quad in normalized `[0,1]`
+  /// coordinates (or `null` quad when nothing document-like is found) plus the
+  /// image's EXIF-upright pixel size. Pair it with `EditCornersScreen` and
+  /// [warpImage] to run the full **detect → edit → warp** pipeline on an
+  /// imported image. Returns `null` only when the image cannot be read.
+  ///
+  /// A pure file operation — no camera session or [initialize] call required.
+  Future<ImageDetection?> detectInImage({required String imagePath});
 }
