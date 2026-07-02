@@ -1,3 +1,27 @@
+## 0.0.8
+
+**Web & desktop support — the package no longer hard-fails off mobile**
+
+- The pure-compute half of the pipeline now has a **pure-Dart fallback** built
+  on `dart:ui`, so the *import → edit-corners → warp* flow works on desktop
+  (and as a safety net anywhere the native plugin is missing) instead of
+  throwing an opaque `MissingPluginException`. `warpImage` does a true
+  perspective (homography) dewarp, `rotateImage` rotates, `detectInImage`
+  reports the image size with a `null` quad (seeding a manual crop), and
+  `recognizeText` returns an empty result.
+- **Graceful degradation** — camera/native-only methods (`initialize`,
+  `capture`, flash/focus/zoom, `scanWithNativeUI`) now surface a clear
+  `ScannerUnavailableException` off Android/iOS rather than a raw plugin error.
+- **Capability flags** — `DoclensPlatform.supportsLiveScan` and
+  `DoclensPlatform.supportsImportFlow` let you branch your UI without
+  try/catch.
+- **New building blocks** exported for web (where the path-based API can't run):
+  `PerspectiveWarp.warpBytes(bytes, quad)` and `ImageEnhance.apply(image,
+  enhancement)` operate purely on bytes / `ui.Image`.
+- Fallback output is **PNG** (lossless — `jpegQuality` ignored) and
+  `autoOrientation` is a no-op off-device (needs on-device OCR). See the new
+  **Platform support** section in the README for the full capability matrix.
+
 ## 0.0.7
 
 **Large-document scan — capture a document too big for one frame**
