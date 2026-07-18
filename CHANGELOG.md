@@ -1,3 +1,7 @@
+## 0.0.8
+
+- Swift Package Manager support on iOS. CocoaPods still works — no migration needed.
+
 ## 0.0.7
 
 **Large-document scan — capture a document too big for one frame**
