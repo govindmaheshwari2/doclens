@@ -9,7 +9,8 @@ Native-grade document edge detection (Apple Vision) + perspective warp, paired w
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Govind Maheshwari' => 'https://github.com/govindmaheshwari2' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
+  s.source_files = 'doclens/Sources/doclens/**/*.swift'
+  s.resource_bundles = { 'doclens_privacy' => ['doclens/Sources/doclens/Resources/PrivacyInfo.xcprivacy'] }
   s.dependency 'Flutter'
   s.platform = :ios, '13.0'
 

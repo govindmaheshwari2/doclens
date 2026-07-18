@@ -1026,7 +1026,6 @@ class _DoclensScreenState extends State<DoclensScreen> {
           doneLabel: widget.doneLabel,
           onReorder: (oldIndex, newIndex) {
             setState(() {
-              if (newIndex > oldIndex) newIndex -= 1;
               final page = _pages.removeAt(oldIndex);
               _pages.insert(newIndex, page);
             });
@@ -1086,116 +1085,116 @@ class _DoclensScreenState extends State<DoclensScreen> {
         if (!didPop) _handleClose();
       },
       child: Scaffold(
-      backgroundColor: widget.backgroundColor,
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Live preview + overlay + shutter (provided by the package's
-            // builder slots). The shutter floats inside this child too.
-            DoclensView(
-              controller: _controller,
-              backgroundColor: widget.backgroundColor,
-              overlayBuilder: (ctx, quad, status) {
-                // When the caller picks a `QuadOverlayStyle`, render that
-                // package-shipped family member instead of the screen's
-                // built-in reticle. Either way colours follow the
-                // user-supplied accent / warning.
-                if (widget.overlayStyle != null) {
-                  return quadOverlayFor(
-                    style: widget.overlayStyle!,
+        backgroundColor: widget.backgroundColor,
+        body: SafeArea(
+          top: false,
+          bottom: false,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Live preview + overlay + shutter (provided by the package's
+              // builder slots). The shutter floats inside this child too.
+              DoclensView(
+                controller: _controller,
+                backgroundColor: widget.backgroundColor,
+                overlayBuilder: (ctx, quad, status) {
+                  // When the caller picks a `QuadOverlayStyle`, render that
+                  // package-shipped family member instead of the screen's
+                  // built-in reticle. Either way colours follow the
+                  // user-supplied accent / warning.
+                  if (widget.overlayStyle != null) {
+                    return quadOverlayFor(
+                      style: widget.overlayStyle!,
+                      quad: quad,
+                      status: status,
+                      accent: _accent,
+                      warning: _warning,
+                    );
+                  }
+                  return _ReticleOverlay(
                     quad: quad,
                     status: status,
                     accent: _accent,
                     warning: _warning,
                   );
-                }
-                return _ReticleOverlay(
-                  quad: quad,
-                  status: status,
-                  accent: _accent,
-                  warning: _warning,
-                );
-              },
-              captureButtonBuilder: null, // we draw the shutter ourselves
-              flashButtonBuilder: null, // ditto
-              lowLightHintBuilder: null,
-              onCapture: _handleCapture,
-            ),
-
-            // Vignette + film-grain feel without an image asset.
-            IgnorePointer(child: _Vignette()),
-
-            // Top instrument bar: close · title · flash + lens.
-            // ListenableBuilder repaints when the controller calls
-            // notifyListeners() — currently on flash change and on every
-            // status transition. Without this the flash chip would render
-            // once and then never update its icon when the user taps it.
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: ListenableBuilder(
-                listenable: _controller,
-                builder: (context, _) => _TopInstrumentBar(
-                  showClose: widget.showCloseButton,
-                  accent: _accent,
-                  onClose: _handleClose,
-                  flashMode: _controller.flashMode,
-                  onFlash: () => _controller.cycleFlashMode(),
-                ),
+                },
+                captureButtonBuilder: null, // we draw the shutter ourselves
+                flashButtonBuilder: null, // ditto
+                lowLightHintBuilder: null,
+                onCapture: _handleCapture,
               ),
-            ),
 
-            // Live status readout (the instrument cluster).
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 188,
-              child: IgnorePointer(
-                child: Center(
-                  child: AnimatedBuilder(
-                    animation: _controller,
-                    builder: (context, _) {
-                      final s = _controller.status;
-                      return _StatusReadout(
-                        label: _statusLabel(s),
-                        hint: widget.showHint ? widget.captureHintText : null,
-                        accent: _accent,
-                        warning: _warning,
-                        status: s,
-                      );
-                    },
+              // Vignette + film-grain feel without an image asset.
+              IgnorePointer(child: _Vignette()),
+
+              // Top instrument bar: close · title · flash + lens.
+              // ListenableBuilder repaints when the controller calls
+              // notifyListeners() — currently on flash change and on every
+              // status transition. Without this the flash chip would render
+              // once and then never update its icon when the user taps it.
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: ListenableBuilder(
+                  listenable: _controller,
+                  builder: (context, _) => _TopInstrumentBar(
+                    showClose: widget.showCloseButton,
+                    accent: _accent,
+                    onClose: _handleClose,
+                    flashMode: _controller.flashMode,
+                    onFlash: () => _controller.cycleFlashMode(),
                   ),
                 ),
               ),
-            ),
 
-            // Bottom shutter band.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) => _BottomShutterBand(
-                  accent: _accent,
-                  onCapture: _manualCapture,
-                  isCapturing: _controller.isCapturing,
-                  status: _controller.status,
-                  pages: widget.multiPage ? _pages : null,
-                  atPageLimit: _atPageLimit,
-                  doneLabel: widget.doneLabel,
-                  onDone: _finishMultiPage,
-                  onOpenGallery: _openGallery,
+              // Live status readout (the instrument cluster).
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 188,
+                child: IgnorePointer(
+                  child: Center(
+                    child: AnimatedBuilder(
+                      animation: _controller,
+                      builder: (context, _) {
+                        final s = _controller.status;
+                        return _StatusReadout(
+                          label: _statusLabel(s),
+                          hint: widget.showHint ? widget.captureHintText : null,
+                          accent: _accent,
+                          warning: _warning,
+                          status: s,
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+
+              // Bottom shutter band.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, _) => _BottomShutterBand(
+                    accent: _accent,
+                    onCapture: _manualCapture,
+                    isCapturing: _controller.isCapturing,
+                    status: _controller.status,
+                    pages: widget.multiPage ? _pages : null,
+                    atPageLimit: _atPageLimit,
+                    doneLabel: widget.doneLabel,
+                    onDone: _finishMultiPage,
+                    onOpenGallery: _openGallery,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -2374,7 +2373,8 @@ class _OcrToggleChip extends StatelessWidget {
                   color: fg,
                 ),
               const SizedBox(width: 6),
-              Text('OCR', style: _mono(size: 10, color: fg, weight: FontWeight.w600)),
+              Text('OCR',
+                  style: _mono(size: 10, color: fg, weight: FontWeight.w600)),
             ],
           ),
         ),
@@ -2409,7 +2409,8 @@ class _OcrOverlayPainter extends CustomPainter {
 
     for (final line in ocr.lines) {
       final b = line.boundingBox;
-      final r = Rect.fromLTRB(b.left * sx, b.top * sy, b.right * sx, b.bottom * sy);
+      final r =
+          Rect.fromLTRB(b.left * sx, b.top * sy, b.right * sx, b.bottom * sy);
       if (r.isEmpty) continue;
       final rr = RRect.fromRectAndRadius(r, const Radius.circular(2));
       canvas.drawRRect(rr, boxFill);
@@ -2779,10 +2780,8 @@ class _PagesGalleryScreenState extends State<_PagesGalleryScreen> {
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                       buildDefaultDragHandles: false,
                       itemCount: pages.length,
-                      onReorder: (oldIndex, newIndex) {
-                        widget.onReorder(oldIndex, newIndex);
-                        setState(() {});
-                      },
+                      onReorderItem: (oldIndex, newIndex) =>
+                          setState(() => widget.onReorder(oldIndex, newIndex)),
                       itemBuilder: (context, i) {
                         final page = pages[i];
                         return _GalleryRow(
