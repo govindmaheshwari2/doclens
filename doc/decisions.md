@@ -29,6 +29,16 @@ for v0.1.**
   For v0.2: gate an OpenCV variant behind an opt-in flag for users who
   need maximum robustness on cluttered backgrounds.
 
+The threshold is what makes this pipeline directional in a way Vision is
+not: keeping pixels above the frame mean finds paper, and nothing else. So
+which side of the mean counts as document is a setting rather than a
+constant — `ScannerConfig.detectionPolarity` (`brighter` / `darker` /
+`auto`) and `detectionThresholdOffset`. `auto` runs both polarities and
+scores the two candidates on solidity, distance from the frame edges, and
+size; the surface a document lies on scores badly on the first two, because
+the document is a hole in it and it runs off every edge of the frame. The
+default stays `brighter`, so this changed no existing behavior.
+
 This decision is reversible — see `QuadDetector.detect()`; a future
 variant could ship as a separate package extension.
 

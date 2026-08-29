@@ -4,6 +4,25 @@ import 'package:doclens/doclens.dart';
 import 'package:doclens/src/method_channel_platform.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+
+/// Records the config the controller hands to the platform layer.
+class _RecordingPlatform extends DoclensPlatform
+    with MockPlatformInterfaceMixin {
+  ScannerConfig? seenConfig;
+
+  @override
+  Future<ImageDetection?> detectInImage({
+    required String imagePath,
+    ScannerConfig config = const ScannerConfig(),
+  }) async {
+    seenConfig = config;
+    return const ImageDetection(quad: null, imageSize: Size(10, 10));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -73,6 +92,10 @@ void main() {
       final result = await platform.detectInImage(imagePath: '/tmp/pic.jpg');
       expect(calls.single.method, 'detectInImage');
       expect(calls.single.arguments['imagePath'], '/tmp/pic.jpg');
+      // Detection knobs ride along so an imported photo segments the same
+      // way the live preview does.
+      expect(calls.single.arguments['detectionPolarity'], 'brighter');
+      expect(calls.single.arguments['detectionThresholdOffset'], 20);
       expect(result, isNotNull);
       expect(result!.imageSize, const Size(640, 480));
       expect(result.quad, isNotNull);
@@ -91,10 +114,46 @@ void main() {
       expect(result.imageSize, const Size(640, 480));
     });
 
+    test('forwards the config\'s detection polarity and threshold', () async {
+      response = <String, Object?>{
+        'quad': null,
+        'imageSize': <double>[640, 480],
+      };
+      await platform.detectInImage(
+        imagePath: '/tmp/card.jpg',
+        config: const ScannerConfig(
+          detectionPolarity: DetectionPolarity.darker,
+          detectionThresholdOffset: 12,
+        ),
+      );
+      expect(calls.single.arguments['detectionPolarity'], 'darker');
+      expect(calls.single.arguments['detectionThresholdOffset'], 12);
+    });
+
     test('returns null when native returns null', () async {
       response = null;
       final result = await platform.detectInImage(imagePath: '/tmp/pic.jpg');
       expect(result, isNull);
+    });
+  });
+
+  group('DoclensController.detectInImage', () {
+    test('detects with the session config, not the platform defaults',
+        () async {
+      final recorder = _RecordingPlatform();
+      DoclensPlatform.instance = recorder;
+      final controller = DoclensController(
+        config: const ScannerConfig(
+          detectionPolarity: DetectionPolarity.darker,
+          detectionThresholdOffset: 12,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.detectInImage('/tmp/card.jpg');
+
+      expect(recorder.seenConfig?.detectionPolarity, DetectionPolarity.darker);
+      expect(recorder.seenConfig?.detectionThresholdOffset, 12);
     });
   });
 }

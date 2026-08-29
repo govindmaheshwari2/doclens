@@ -1,6 +1,60 @@
 ## 0.0.8
 
-- Swift Package Manager support on iOS. CocoaPods still works — no migration needed.
+**Web & desktop support — the package no longer hard-fails off mobile**
+
+- The pure-compute half of the pipeline now has a **pure-Dart fallback** built
+  on `dart:ui`, so the *import → edit-corners → warp* flow works on desktop
+  (and as a safety net anywhere the native plugin is missing) instead of
+  throwing an opaque `MissingPluginException`. `warpImage` does a true
+  perspective (homography) dewarp, `rotateImage` rotates, `detectInImage`
+  reports the image size with a `null` quad (seeding a manual crop), and
+  `recognizeText` returns an empty result.
+- **Graceful degradation** — camera/native-only methods (`initialize`,
+  `capture`, flash/focus/zoom, `scanWithNativeUI`) now surface a clear
+  `ScannerUnavailableException` off Android/iOS rather than a raw plugin error.
+- **Capability flags** — `DoclensPlatform.supportsLiveScan` and
+  `DoclensPlatform.supportsImportFlow` let you branch your UI without
+  try/catch.
+- **New building blocks** exported for web (where the path-based API can't run):
+  `PerspectiveWarp.warpBytes(bytes, quad)` and `ImageEnhance.apply(image,
+  enhancement)` operate purely on bytes / `ui.Image`.
+- Fallback output is **PNG** (lossless — `jpegQuality` ignored) and
+  `autoOrientation` is a no-op off-device (needs on-device OCR). See the new
+  **Platform support** section in the README for the full capability matrix.
+
+**Dark documents now detect on Android — `detectionPolarity`**
+
+- The Android detector segmented every frame by keeping the *brighter* side
+  of the frame's mean luma, so it only ever found documents lighter than
+  their surroundings. A dark ID card, a saturated trading card, or a glossy
+  photo on a light desk lost the component search to the background and left
+  `DetectionStatus` at `searching` / `noPaper`. iOS was unaffected — Apple
+  Vision is contrast-agnostic.
+- New `ScannerConfig.detectionPolarity` (`DetectionPolarity.brighter`,
+  `.darker`, `.auto`). `brighter` is the default and is exactly the previous
+  behavior; `darker` mirrors the threshold for documents darker than their
+  background; `auto` runs both polarities per frame and keeps whichever
+  candidate looks more document-like — solid, clear of the frame edges, and
+  large — for roughly twice the per-frame detection cost.
+- New `ScannerConfig.detectionThresholdOffset` (default `20`, range `0`–`128`)
+  exposes the luma bias that was hardcoded in the detector. Lower it when a
+  document barely separates from its background, raise it to keep shadows and
+  highlights out of the document's component.
+- Both settings travel with `DoclensController.detectInImage(path)` too, so
+  gallery imports segment the way the live preview does.
+- Additive and default-preserving: existing apps behave exactly as before.
+  Both are Android-only and are ignored on iOS.
+- Note for anyone implementing `DoclensPlatform` themselves:
+  `detectInImage` gained an optional `config` parameter, so an override with
+  the old signature needs the new parameter added. Callers are unaffected.
+- Fixed: `DoclensScreen` dropped `enableSharpnessGate`, `sharpnessFloor`, and
+  `autoCaptureFocusTimeout` when merging its top-level overrides into a
+  supplied `ScannerConfig`, so those three fell back to their defaults on that
+  entry point.
+
+**iOS packaging**
+
+- Swift Package Manager support. CocoaPods still works — no migration needed.
 
 ## 0.0.7
 
