@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import 'fallback/fallback_engine.dart';
 import 'models.dart';
 import 'ocr.dart';
 import 'platform_interface.dart';
@@ -13,6 +14,19 @@ class MethodChannelDoclens extends DoclensPlatform {
 
   Stream<DetectionEvent>? _detectionStream;
 
+  /// Message used when a camera / native-only method is called on a platform
+  /// with no native plugin (web, desktop). The pure-compute methods
+  /// (warp / rotate / detect / OCR) transparently fall back to a Dart
+  /// implementation instead of throwing this.
+  static const _noNativeMessage =
+      'doclens: the native scanner is not available on this platform. Live '
+      'camera scanning (initialize/capture) requires Android or iOS. On web '
+      'and desktop, use the import → edit-corners → warp fallback '
+      '(detectInImage + warpImage are supported without native).';
+
+  ScannerException get _unavailable =>
+      const ScannerUnavailableException(_noNativeMessage);
+
   @override
   Future<int> initialize(ScannerConfig config) async {
     try {
@@ -22,6 +36,8 @@ class MethodChannelDoclens extends DoclensPlatform {
             'Native returned null texture id');
       }
       return result;
+    } on MissingPluginException {
+      throw _unavailable;
     } on PlatformException catch (e) {
       throw _translate(e);
     }
@@ -31,6 +47,8 @@ class MethodChannelDoclens extends DoclensPlatform {
   Future<void> dispose() async {
     try {
       await _method.invokeMethod<void>('dispose');
+    } on MissingPluginException {
+      // Nothing to tear down when there was never a native session.
     } on PlatformException catch (e) {
       throw _translate(e);
     }
@@ -44,6 +62,8 @@ class MethodChannelDoclens extends DoclensPlatform {
         throw const ScannerCaptureException('Native returned null capture');
       }
       return ScanResult.fromMap(raw);
+    } on MissingPluginException {
+      throw _unavailable;
     } on PlatformException catch (e) {
       throw _translate(e);
     }
@@ -69,6 +89,13 @@ class MethodChannelDoclens extends DoclensPlatform {
         throw const ScannerCaptureException('Warp returned null path');
       }
       return out;
+    } on MissingPluginException {
+      // No native plugin — dewarp in pure Dart instead of hard-failing.
+      return FallbackEngine.warpImage(
+        rawImagePath: rawImagePath,
+        quad: quad,
+        enhancement: enhancement,
+      );
     } on PlatformException catch (e) {
       throw _translate(e);
     }
@@ -88,6 +115,11 @@ class MethodChannelDoclens extends DoclensPlatform {
         throw const ScannerCaptureException('Rotate returned null path');
       }
       return out;
+    } on MissingPluginException {
+      return FallbackEngine.rotateImage(
+        imagePath: imagePath,
+        quarterTurns: quarterTurns,
+      );
     } on PlatformException catch (e) {
       throw _translate(e);
     }
@@ -116,6 +148,8 @@ class MethodChannelDoclens extends DoclensPlatform {
   Future<void> _wrap(Future<void> Function() action) async {
     try {
       await action();
+    } on MissingPluginException {
+      throw _unavailable;
     } on PlatformException catch (e) {
       throw _translate(e);
     }
@@ -154,6 +188,10 @@ class MethodChannelDoclens extends DoclensPlatform {
         throw const ScannerCaptureException('Native returned null OCR result');
       }
       return OcrResult.fromMap(raw);
+    } on MissingPluginException {
+      // No OS recogniser off-platform: return an empty result, matching the
+      // "recogniser unavailable" contract rather than throwing.
+      return FallbackEngine.recognizeText(imagePath: imagePath);
     } on PlatformException catch (e) {
       throw _translate(e);
     }
@@ -176,6 +214,8 @@ class MethodChannelDoclens extends DoclensPlatform {
       );
       if (raw == null) return null;
       return raw.cast<String>();
+    } on MissingPluginException {
+      throw _unavailable;
     } on PlatformException catch (e) {
       throw _translate(e);
     }
@@ -208,6 +248,10 @@ class MethodChannelDoclens extends DoclensPlatform {
           (sizeRaw[1] as num).toDouble(),
         ),
       );
+    } on MissingPluginException {
+      // No native detector: report the image size with a null quad so the
+      // caller's EditCornersScreen seeds a default inset for manual cropping.
+      return FallbackEngine.detectInImage(imagePath: imagePath);
     } on PlatformException catch (e) {
       throw _translate(e);
     }

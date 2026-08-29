@@ -14,7 +14,9 @@ const _kRust = Color(0xFFB5482E);
 ///
 ///   1. **detect** — [DoclensPlatform.detectInImage] runs the native edge
 ///      detector on the picked still image and returns a quad + the image's
-///      pixel size.
+///      pixel size. Off mobile (desktop) there's no native detector, so it
+///      returns the image size with a `null` quad — [ImageDetection.quadIn]
+///      then seeds a 10% inset the user drags into place (manual crop).
 ///   2. **edit**   — [EditCornersScreen] lets the user nudge the corners,
 ///      seeded from the detection (or a 10% inset when nothing was found).
 ///   3. **warp**   — on save, [DoclensPlatform.warpImage] dewarps the photo

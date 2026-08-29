@@ -362,6 +362,49 @@ scaled into pixel coordinates. Like `warpImage` / `rotateImage` /
 session required. The example app's **Gallery import** entry shows the full
 flow end to end.
 
+## Platform support — mobile, desktop & web
+
+The **live scanner** (camera preview + streaming edge detection) is native and
+runs on **Android and iOS**. Everywhere else the package no longer hard-fails:
+the pure-compute half of the pipeline has a **pure-Dart fallback** built on
+`dart:ui`, so the *import → edit-corners → warp* flow keeps working off mobile.
+
+| Capability | Android / iOS | Desktop (macOS/Windows/Linux) | Web |
+| --- | --- | --- | --- |
+| Live camera + edge detection | ✅ native | ❌ (throws `ScannerUnavailableException`) | ❌ |
+| `detectInImage` (import) | ✅ native detector | ✅ Dart (null quad → manual crop) | ⚠️ bytes only |
+| `warpImage` (perspective dewarp) | ✅ native | ✅ Dart homography | ⚠️ bytes only |
+| `rotateImage` | ✅ native | ✅ Dart | ⚠️ bytes only |
+| `EditCornersScreen` | ✅ | ✅ | ⚠️ needs a filesystem |
+| Image enhancement | ✅ native | ✅ Dart (grayscale / contrast / Otsu) | ✅ on bytes |
+| OCR (`recognizeText`) | ✅ native | ❌ empty result | ❌ empty result |
+
+Gate your UI on the capability flags instead of catching exceptions:
+
+```dart
+if (DoclensPlatform.supportsLiveScan) {
+  // Show the live-camera entry point (Android / iOS).
+  final result = await DoclensScreen.scan(context);
+} else if (DoclensPlatform.supportsImportFlow) {
+  // Desktop: run the same detect → edit → warp flow on a picked file.
+  final detection = await controller.detectInImage(path);
+  // … EditCornersScreen → controller.warpImage(path, quad)
+}
+```
+
+**Notes on the fallback.** It writes **PNG** (lossless), so `jpegQuality` is
+ignored; `autoOrientation` is a no-op (upright detection needs on-device OCR);
+and `detectInImage` returns a `null` quad (no Dart edge detector) so `quadIn`
+seeds a 10% inset the user drags into place — a **manual crop**. The homography
+warp, output-size derivation, and enhancement passes are otherwise faithful to
+the native behaviour.
+
+**Web.** The public API is path-based, which needs a filesystem web doesn't
+have, so the path methods throw a clear `ScannerUnavailableException` there.
+The underlying engine is web-safe, though: decode your imported image to bytes
+and call the exported `PerspectiveWarp.warpBytes(bytes, quad)` /
+`ImageEnhance.apply(image, enhancement)` building blocks directly.
+
 ## Image enhancement & shadow removal
 
 By default the cropped output is a pure dewarp — the original pixels,

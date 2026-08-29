@@ -1,7 +1,9 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'fallback/fallback_engine.dart';
 import 'method_channel_platform.dart';
 import 'models.dart';
 import 'ocr.dart';
@@ -44,6 +46,28 @@ abstract class DoclensPlatform extends PlatformInterface {
     PlatformInterface.verifyToken(p, _token);
     _instance = p;
   }
+
+  /// Whether the **live** native scanner (camera preview + streaming edge
+  /// detection) can run on the current platform.
+  ///
+  /// Only Android and iOS ship the native pipeline; on web and desktop this is
+  /// `false` and the live-camera APIs ([initialize], [capture], detection
+  /// streams, flash/focus/zoom) throw [ScannerUnavailableException]. Gate your
+  /// live-scanner entry points on this and fall back to the import flow
+  /// (see [supportsImportFlow]) elsewhere.
+  static bool get supportsLiveScan =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  /// Whether the **import → edit-corners → warp** flow works on the current
+  /// platform. True on mobile and desktop; the path-based pipeline
+  /// ([detectInImage], [warpImage], [rotateImage]) runs natively on mobile and
+  /// in pure Dart on desktop. `false` only on web, whose lack of a filesystem
+  /// makes the path-based API unusable — feed bytes to the `PerspectiveWarp`
+  /// building block directly there instead.
+  static bool get supportsImportFlow =>
+      supportsLiveScan || FallbackEngine.isAvailable;
 
   /// Initialize a session. Returns the texture id to render in [Texture].
   Future<int> initialize(ScannerConfig config);
