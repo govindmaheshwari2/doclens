@@ -222,11 +222,18 @@ class MethodChannelDoclens extends DoclensPlatform {
   }
 
   @override
-  Future<ImageDetection?> detectInImage({required String imagePath}) async {
+  Future<ImageDetection?> detectInImage({
+    required String imagePath,
+    ScannerConfig config = const ScannerConfig(),
+  }) async {
     try {
       final raw = await _method.invokeMethod<Map<dynamic, dynamic>>(
         'detectInImage',
-        {'imagePath': imagePath},
+        {
+          'imagePath': imagePath,
+          'detectionPolarity': config.detectionPolarity.name,
+          'detectionThresholdOffset': config.detectionThresholdOffset,
+        },
       );
       if (raw == null) return null;
       final sizeRaw = raw['imageSize'];

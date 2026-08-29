@@ -46,7 +46,7 @@ class FallbackEngine {
     }
     try {
       final png = await _encodePng(enhanced);
-      return writeTempImage(png, 'png');
+      return await writeTempImage(png, 'png');
     } finally {
       if (!identical(enhanced, warped)) enhanced.dispose();
       warped.dispose();
@@ -66,7 +66,7 @@ class FallbackEngine {
       final rotated = await _rotate(src, turns);
       try {
         final png = await _encodePng(rotated);
-        return writeTempImage(png, 'png');
+        return await writeTempImage(png, 'png');
       } finally {
         if (!identical(rotated, src)) rotated.dispose();
       }

@@ -386,9 +386,15 @@ class DoclensController extends ChangeNotifier {
   /// A pure file operation — needs no camera, so it works whether or not
   /// [initialize] has been called. Returns `null` only when the image cannot
   /// be read.
+  ///
+  /// Detection runs with this controller's [ScannerConfig], so an imported
+  /// photo segments exactly the way the live preview does — including
+  /// [ScannerConfig.detectionPolarity] for documents darker than their
+  /// background.
   Future<ImageDetection?> detectInImage(String imagePath) {
     _ensureNotDisposed();
-    return DoclensPlatform.instance.detectInImage(imagePath: imagePath);
+    return DoclensPlatform.instance
+        .detectInImage(imagePath: imagePath, config: _config);
   }
 
   Future<void> setFlashMode(FlashMode mode) async {

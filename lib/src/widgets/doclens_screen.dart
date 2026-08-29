@@ -857,8 +857,13 @@ class _DoclensScreenState extends State<DoclensScreen> {
       autoCaptureConfirmationDelay:
           widget.autoCaptureConfirmationDelay ?? c.autoCaptureConfirmationDelay,
       detectionThrottleHz: widget.detectionThrottleHz ?? c.detectionThrottleHz,
+      detectionPolarity: c.detectionPolarity,
+      detectionThresholdOffset: c.detectionThresholdOffset,
       enableQuadSmoothing: c.enableQuadSmoothing,
       quadSmoothingWindow: c.quadSmoothingWindow,
+      enableSharpnessGate: c.enableSharpnessGate,
+      autoCaptureFocusTimeout: c.autoCaptureFocusTimeout,
+      sharpnessFloor: c.sharpnessFloor,
       // capture
       enablePerspectiveWarp:
           widget.enablePerspectiveWarp ?? c.enablePerspectiveWarp,
