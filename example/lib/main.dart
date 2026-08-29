@@ -127,6 +127,7 @@ class ShowroomHome extends StatelessWidget {
         ],
         accent: _kRust,
         preview: const _DropInPreview(),
+        requiresLiveScan: true,
         onTap: (ctx) async {
           final mode = await _pickEnhancement(ctx);
           if (mode == null || !ctx.mounted) return;
@@ -160,6 +161,7 @@ class ShowroomHome extends StatelessWidget {
         ],
         accent: _kRust,
         preview: const _DropInPreview(),
+        requiresLiveScan: true,
         onTap: (ctx) async {
           final pages = await DoclensMultiScreen.scan(
             ctx,
@@ -184,6 +186,7 @@ class ShowroomHome extends StatelessWidget {
         ],
         accent: _kInkBlue,
         preview: const _BrandedPreview(),
+        requiresLiveScan: true,
         onTap: (ctx) => Navigator.of(ctx).push(
           MaterialPageRoute<void>(builder: (_) => const BrandedStyleScanner()),
         ),
@@ -204,6 +207,7 @@ class ShowroomHome extends StatelessWidget {
         ],
         accent: _kRust,
         preview: const _LargeDocPreview(),
+        requiresLiveScan: true,
         onTap: (ctx) async {
           final path = await DoclensLargeDocScreen.scan(ctx);
           if (path == null || !ctx.mounted) return;
@@ -225,6 +229,7 @@ class ShowroomHome extends StatelessWidget {
         ],
         accent: _kCharcoal,
         preview: const _NativePreview(),
+        requiresLiveScan: true,
         onTap: (ctx) => Navigator.of(ctx).push(
           MaterialPageRoute<void>(builder: (_) => const NativeOSScanner()),
         ),
@@ -242,6 +247,7 @@ class ShowroomHome extends StatelessWidget {
         ],
         accent: _kRust,
         preview: const _GalleryPreview(),
+        requiresImportFlow: true,
         onTap: (ctx) => Navigator.of(ctx).push(
           MaterialPageRoute<void>(builder: (_) => const GalleryImportScanner()),
         ),
@@ -256,6 +262,12 @@ class ShowroomHome extends StatelessWidget {
           children: [
             const _ShowroomMasthead(),
             const SizedBox(height: 24),
+            if (!DoclensPlatform.supportsLiveScan) ...[
+              _PlatformBanner(
+                importSupported: DoclensPlatform.supportsImportFlow,
+              ),
+              const SizedBox(height: 16),
+            ],
             for (final e in entries) ...[
               _StyleCard(entry: e),
               const SizedBox(height: 14),
@@ -264,6 +276,48 @@ class ShowroomHome extends StatelessWidget {
             const _ShowroomFooter(),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---- off-mobile platform notice ----------------------------------------
+
+/// Shown on web/desktop (where the native live scanner can't run) to explain
+/// why the camera cards are disabled and point at the flow that still works.
+class _PlatformBanner extends StatelessWidget {
+  const _PlatformBanner({required this.importSupported});
+
+  final bool importSupported;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = importSupported
+        ? 'No native camera on this platform. Live scanning is Android / iOS '
+            'only — but “Import a photo” runs the full detect → edit → warp '
+            'pipeline here in pure Dart.'
+        : 'No native camera and no filesystem on web. Decode an image to bytes '
+            'and call PerspectiveWarp.warpBytes / ImageEnhance.apply directly.';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _kPaperRecessed,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _kRule),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.desktop_windows_outlined,
+              size: 18, color: _kInkSoft),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: _mono(size: 11, color: _kInkSoft, height: 1.5),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -349,6 +403,8 @@ class _StyleEntry {
     required this.accent,
     required this.preview,
     required this.onTap,
+    this.requiresLiveScan = false,
+    this.requiresImportFlow = false,
   });
   final String index;
   final String eyebrow;
@@ -358,6 +414,28 @@ class _StyleEntry {
   final Color accent;
   final Widget preview;
   final void Function(BuildContext) onTap;
+
+  /// Needs the native live camera + edge detector (Android / iOS only).
+  final bool requiresLiveScan;
+
+  /// Needs the path-based import → warp pipeline (mobile + desktop; not web).
+  final bool requiresImportFlow;
+
+  /// Whether this entry can run on the current platform. Disabled entries are
+  /// dimmed and explain why on tap rather than throwing.
+  bool get isSupported =>
+      (!requiresLiveScan || DoclensPlatform.supportsLiveScan) &&
+      (!requiresImportFlow || DoclensPlatform.supportsImportFlow);
+
+  /// Why a disabled entry can't run here, for the tap hint.
+  String get unsupportedReason {
+    if (requiresLiveScan && !DoclensPlatform.supportsLiveScan) {
+      return 'Live camera scanning runs on Android and iOS. On this platform, '
+          'try “Import a photo”.';
+    }
+    return 'The path-based import pipeline needs a filesystem, which web '
+        "doesn't provide. Decode to bytes and use PerspectiveWarp directly.";
+  }
 }
 
 class _StyleCard extends StatefulWidget {
@@ -371,15 +449,33 @@ class _StyleCard extends StatefulWidget {
 class _StyleCardState extends State<_StyleCard> {
   bool _pressed = false;
 
+  void _handleTap() {
+    final e = widget.entry;
+    if (e.isSupported) {
+      e.onTap(context);
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('${e.title} — ${e.unsupportedReason}'),
+          backgroundColor: _kInk,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = widget.entry;
-    return GestureDetector(
+    final enabled = e.isSupported;
+    final card = GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTap: () => e.onTap(context),
+      onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+      onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+      onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
+      onTap: _handleTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
@@ -462,6 +558,37 @@ class _StyleCardState extends State<_StyleCard> {
           ),
         ),
       ),
+    );
+
+    if (enabled) return card;
+    // Off-platform: dim the card and badge why it can't run here. The tap
+    // still fires (see _handleTap) to explain instead of silently failing.
+    return Stack(
+      children: [
+        Opacity(opacity: 0.45, child: card),
+        Positioned(
+          top: 10,
+          right: 10,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _kInk,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                e.requiresLiveScan ? 'CAMERA ONLY' : 'MOBILE / DESKTOP',
+                style: _mono(
+                  size: 9,
+                  color: _kPaperHi,
+                  weight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
