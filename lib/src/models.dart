@@ -385,8 +385,9 @@ class ScannerConfig {
   /// Lower it (`8`–`12`) for documents that barely separate from their
   /// background — an off-white receipt on a white desk. Raise it
   /// (`30`–`45`) in high-contrast scenes to stop shadows and specular
-  /// highlights from joining the document's component. Must be in `0`–`128`;
-  /// beyond that the mask collapses to empty.
+  /// highlights from joining the document's component. Must be in `0`–`128`
+  /// — past that the detector's own clamps pin the threshold and a larger
+  /// value changes nothing.
   final int detectionThresholdOffset;
 
   /// Apply a median filter across recent frames before emitting the quad

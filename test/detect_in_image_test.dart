@@ -4,6 +4,25 @@ import 'package:doclens/doclens.dart';
 import 'package:doclens/src/method_channel_platform.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+
+/// Records the config the controller hands to the platform layer.
+class _RecordingPlatform extends DoclensPlatform
+    with MockPlatformInterfaceMixin {
+  ScannerConfig? seenConfig;
+
+  @override
+  Future<ImageDetection?> detectInImage({
+    required String imagePath,
+    ScannerConfig config = const ScannerConfig(),
+  }) async {
+    seenConfig = config;
+    return const ImageDetection(quad: null, imageSize: Size(10, 10));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -115,6 +134,26 @@ void main() {
       response = null;
       final result = await platform.detectInImage(imagePath: '/tmp/pic.jpg');
       expect(result, isNull);
+    });
+  });
+
+  group('DoclensController.detectInImage', () {
+    test('detects with the session config, not the platform defaults',
+        () async {
+      final recorder = _RecordingPlatform();
+      DoclensPlatform.instance = recorder;
+      final controller = DoclensController(
+        config: const ScannerConfig(
+          detectionPolarity: DetectionPolarity.darker,
+          detectionThresholdOffset: 12,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.detectInImage('/tmp/card.jpg');
+
+      expect(recorder.seenConfig?.detectionPolarity, DetectionPolarity.darker);
+      expect(recorder.seenConfig?.detectionThresholdOffset, 12);
     });
   });
 }

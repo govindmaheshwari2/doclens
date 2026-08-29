@@ -33,7 +33,10 @@ object QuadDetector {
      */
     const val DEFAULT_THRESHOLD_OFFSET = 20
 
-    /** Largest bias worth honouring — beyond this the mask collapses to empty. */
+    /**
+     * Largest bias worth honouring. Past this the clamps in [buildMask] pin
+     * the threshold to its extremes, so a larger offset changes nothing.
+     */
     private const val MAX_THRESHOLD_OFFSET = 128
 
     fun detect(
@@ -51,10 +54,12 @@ object QuadDetector {
             DetectionPolarity.DARKER ->
                 analyze(luma, width, height, darker = true, offset = offset)?.quad
             DetectionPolarity.AUTO -> {
-                val bright =
-                    analyze(luma, width, height, false, offset, scored = true)
-                val dark =
-                    analyze(luma, width, height, true, offset, scored = true)
+                val bright = analyze(
+                    luma, width, height, darker = false, offset = offset, scored = true,
+                )
+                val dark = analyze(
+                    luma, width, height, darker = true, offset = offset, scored = true,
+                )
                 when {
                     bright == null -> dark?.quad
                     dark == null -> bright.quad

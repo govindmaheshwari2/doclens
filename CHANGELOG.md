@@ -22,6 +22,9 @@
   gallery imports segment the way the live preview does.
 - Additive and default-preserving: existing apps behave exactly as before.
   Both are Android-only and are ignored on iOS.
+- Note for anyone implementing `DoclensPlatform` themselves:
+  `detectInImage` gained an optional `config` parameter, so an override with
+  the old signature needs the new parameter added. Callers are unaffected.
 - Fixed: `DoclensScreen` dropped `enableSharpnessGate`, `sharpnessFloor`, and
   `autoCaptureFocusTimeout` when merging its top-level overrides into a
   supplied `ScannerConfig`, so those three fell back to their defaults on that
