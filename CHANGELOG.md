@@ -1,3 +1,32 @@
+## Unreleased
+
+**Dark documents now detect on Android — `detectionPolarity`**
+
+- The Android detector segmented every frame by keeping the *brighter* side
+  of the frame's mean luma, so it only ever found documents lighter than
+  their surroundings. A dark ID card, a saturated trading card, or a glossy
+  photo on a light desk lost the component search to the background and left
+  `DetectionStatus` at `searching` / `noPaper`. iOS was unaffected — Apple
+  Vision is contrast-agnostic.
+- New `ScannerConfig.detectionPolarity` (`DetectionPolarity.brighter`,
+  `.darker`, `.auto`). `brighter` is the default and is exactly the previous
+  behavior; `darker` mirrors the threshold for documents darker than their
+  background; `auto` runs both polarities per frame and keeps whichever
+  candidate looks more document-like — solid, clear of the frame edges, and
+  large — for roughly twice the per-frame detection cost.
+- New `ScannerConfig.detectionThresholdOffset` (default `20`, range `0`–`128`)
+  exposes the luma bias that was hardcoded in the detector. Lower it when a
+  document barely separates from its background, raise it to keep shadows and
+  highlights out of the document's component.
+- Both settings travel with `DoclensController.detectInImage(path)` too, so
+  gallery imports segment the way the live preview does.
+- Additive and default-preserving: existing apps behave exactly as before.
+  Both are Android-only and are ignored on iOS.
+- Fixed: `DoclensScreen` dropped `enableSharpnessGate`, `sharpnessFloor`, and
+  `autoCaptureFocusTimeout` when merging its top-level overrides into a
+  supplied `ScannerConfig`, so those three fell back to their defaults on that
+  entry point.
+
 ## 0.0.8
 
 - Swift Package Manager support on iOS. CocoaPods still works — no migration needed.

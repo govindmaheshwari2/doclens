@@ -176,7 +176,10 @@ class ScannerSession(
             val (luma, width, height) = YuvUtils.extractLuma(image, downscaleTo = 256)
             lastFrameWidth = width
             lastFrameHeight = height
-            val quad = QuadDetector.detect(luma, width, height)
+            val quad = QuadDetector.detect(
+                luma, width, height,
+                config.detectionPolarity, config.detectionThresholdOffset,
+            )
             // Rotate quad coordinates into the displayed (rotated) coordinate
             // space so that normalized values match what users see.
             val rotated = quad?.let { rotateNormalizedQuad(it, rotation) }

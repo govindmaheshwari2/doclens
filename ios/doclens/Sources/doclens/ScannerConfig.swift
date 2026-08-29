@@ -1,6 +1,13 @@
 import Foundation
 import AVFoundation
 
+/// Mirrors the Dart `ScannerConfig`.
+///
+/// `detectionPolarity` / `detectionThresholdOffset` are Android-only knobs:
+/// they steer that platform's luma-threshold segmentation. Detection here goes
+/// through Apple Vision, which is contrast-agnostic and finds documents darker
+/// than their background without help, so those keys are ignored here and are
+/// deliberately absent from this struct.
 struct ScannerConfig {
     let enableLiveDetection: Bool
     let detectionThrottleHz: Int

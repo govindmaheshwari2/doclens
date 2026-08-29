@@ -73,6 +73,10 @@ void main() {
       final result = await platform.detectInImage(imagePath: '/tmp/pic.jpg');
       expect(calls.single.method, 'detectInImage');
       expect(calls.single.arguments['imagePath'], '/tmp/pic.jpg');
+      // Detection knobs ride along so an imported photo segments the same
+      // way the live preview does.
+      expect(calls.single.arguments['detectionPolarity'], 'brighter');
+      expect(calls.single.arguments['detectionThresholdOffset'], 20);
       expect(result, isNotNull);
       expect(result!.imageSize, const Size(640, 480));
       expect(result.quad, isNotNull);
@@ -89,6 +93,22 @@ void main() {
       expect(result, isNotNull);
       expect(result!.quad, isNull);
       expect(result.imageSize, const Size(640, 480));
+    });
+
+    test('forwards the config\'s detection polarity and threshold', () async {
+      response = <String, Object?>{
+        'quad': null,
+        'imageSize': <double>[640, 480],
+      };
+      await platform.detectInImage(
+        imagePath: '/tmp/card.jpg',
+        config: const ScannerConfig(
+          detectionPolarity: DetectionPolarity.darker,
+          detectionThresholdOffset: 12,
+        ),
+      );
+      expect(calls.single.arguments['detectionPolarity'], 'darker');
+      expect(calls.single.arguments['detectionThresholdOffset'], 12);
     });
 
     test('returns null when native returns null', () async {

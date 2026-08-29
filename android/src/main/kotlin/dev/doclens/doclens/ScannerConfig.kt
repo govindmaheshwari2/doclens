@@ -1,5 +1,32 @@
 package dev.doclens.doclens
 
+/**
+ * Which side of the frame's luma mean the detector treats as "the document".
+ *
+ * The Kotlin detector segments each frame by thresholding around its mean
+ * luma, so it has to know whether the document is the bright side of that
+ * split (paper on a dark desk) or the dark side (a dark ID card, a colored
+ * trading card, a glossy photo on a white desk).
+ */
+enum class DetectionPolarity {
+    /** Document is brighter than its surroundings (paper — the default). */
+    BRIGHTER,
+
+    /** Document is darker than its surroundings. */
+    DARKER,
+
+    /** Try both and keep the more document-like candidate. Costs ~2x. */
+    AUTO;
+
+    companion object {
+        fun from(name: String?): DetectionPolarity = when (name) {
+            "darker" -> DARKER
+            "auto" -> AUTO
+            else -> BRIGHTER
+        }
+    }
+}
+
 data class ScannerConfig(
     val enableLiveDetection: Boolean,
     val detectionThrottleHz: Int,
@@ -14,6 +41,8 @@ data class ScannerConfig(
     val enableTapToFocus: Boolean,
     val enablePinchToZoom: Boolean,
     val enableLowLightDetection: Boolean,
+    val detectionPolarity: DetectionPolarity,
+    val detectionThresholdOffset: Int,
 ) {
     companion object {
         fun fromMap(m: Map<String, Any?>): ScannerConfig = ScannerConfig(
@@ -30,6 +59,9 @@ data class ScannerConfig(
             enableTapToFocus = m["enableTapToFocus"] as? Boolean ?: true,
             enablePinchToZoom = m["enablePinchToZoom"] as? Boolean ?: true,
             enableLowLightDetection = m["enableLowLightDetection"] as? Boolean ?: true,
+            detectionPolarity = DetectionPolarity.from(m["detectionPolarity"] as? String),
+            detectionThresholdOffset = (m["detectionThresholdOffset"] as? Number)?.toInt()
+                ?: QuadDetector.DEFAULT_THRESHOLD_OFFSET,
         )
     }
 }

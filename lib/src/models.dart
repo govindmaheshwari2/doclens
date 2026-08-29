@@ -231,6 +231,33 @@ class ImageDetection {
   }
 }
 
+/// Which side of a frame's brightness the detector should treat as the
+/// document.
+///
+/// **Android only.** The Android detector segments each camera frame by
+/// thresholding around the frame's mean luma, so it has to be told which side
+/// of that split the document sits on. iOS detects documents with Apple
+/// Vision, which is contrast-agnostic and finds dark and light documents
+/// alike — this setting is accepted and ignored there.
+enum DetectionPolarity {
+  /// The document is brighter than what surrounds it — paper on a desk.
+  /// The default, and the behavior the detector had before this option
+  /// existed.
+  brighter,
+
+  /// The document is darker than what surrounds it — a dark ID card, a
+  /// saturated trading card, or a glossy photo on a light desk.
+  darker,
+
+  /// Run the detector at both polarities on every frame and keep whichever
+  /// candidate looks more document-like (solid, away from the frame edges,
+  /// and large). Handles a mixed pile where the user does not know what comes
+  /// next, at roughly twice the per-frame detection cost — still cheap, since
+  /// detection runs on a 256 px luma buffer, but measure before shipping it on
+  /// low-end devices at a high [ScannerConfig.detectionThrottleHz].
+  auto,
+}
+
 /// Configuration for a scanner session. Every flag has a sensible default;
 /// developers override only what they care about.
 class ScannerConfig {
@@ -246,6 +273,8 @@ class ScannerConfig {
     this.autoCaptureFocusTimeout = const Duration(milliseconds: 2500),
     this.sharpnessFloor = 8.0,
     this.detectionThrottleHz = 15,
+    this.detectionPolarity = DetectionPolarity.brighter,
+    this.detectionThresholdOffset = 20,
     this.enableQuadSmoothing = true,
     this.quadSmoothingWindow = 5,
     // Capture
@@ -273,7 +302,9 @@ class ScannerConfig {
   })  : assert(detectionThrottleHz > 0 && detectionThrottleHz <= 60),
         assert(jpegQuality >= 1 && jpegQuality <= 100),
         assert(autoCaptureCornerThreshold >= 0),
-        assert(sharpnessFloor >= 0);
+        assert(sharpnessFloor >= 0),
+        assert(detectionThresholdOffset >= 0 &&
+            detectionThresholdOffset <= 128);
 
   // Detection
 
@@ -331,6 +362,32 @@ class ScannerConfig {
   final double sharpnessFloor;
 
   final int detectionThrottleHz;
+
+  /// Which side of the frame's brightness holds the document.
+  ///
+  /// **Android only** — see [DetectionPolarity]. Defaults to
+  /// [DetectionPolarity.brighter], the paper-on-a-desk case, which is what
+  /// the detector has always assumed. Set [DetectionPolarity.darker] when
+  /// scanning dark ID cards, trading cards, or photos on a light surface, or
+  /// [DetectionPolarity.auto] to let each frame decide.
+  final DetectionPolarity detectionPolarity;
+
+  /// How far past the frame's mean luma a pixel must be, on `0`–`255`, before
+  /// the detector counts it as part of the document.
+  ///
+  /// **Android only.** The mask keeps pixels above `mean + offset` under
+  /// [DetectionPolarity.brighter] and below `mean - offset` under
+  /// [DetectionPolarity.darker]; the bias keeps the mask off the noise floor
+  /// around the mean, where a flat surface's own gradient would otherwise
+  /// carve out shapes. Defaults to `20`, the value that was hardcoded before
+  /// this option existed.
+  ///
+  /// Lower it (`8`–`12`) for documents that barely separate from their
+  /// background — an off-white receipt on a white desk. Raise it
+  /// (`30`–`45`) in high-contrast scenes to stop shadows and specular
+  /// highlights from joining the document's component. Must be in `0`–`128`;
+  /// beyond that the mask collapses to empty.
+  final int detectionThresholdOffset;
 
   /// Apply a median filter across recent frames before emitting the quad
   /// downstream. Kills single-frame jitter without adding meaningful lag.
@@ -438,6 +495,8 @@ class ScannerConfig {
   Map<String, dynamic> toMap() => {
         'enableLiveDetection': enableLiveDetection,
         'detectionThrottleHz': detectionThrottleHz,
+        'detectionPolarity': detectionPolarity.name,
+        'detectionThresholdOffset': detectionThresholdOffset,
         'enablePerspectiveWarp': enablePerspectiveWarp,
         'jpegQuality': jpegQuality,
         'imageEnhancement': imageEnhancement.name,

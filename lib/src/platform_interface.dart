@@ -123,5 +123,11 @@ abstract class DoclensPlatform extends PlatformInterface {
   /// imported image. Returns `null` only when the image cannot be read.
   ///
   /// A pure file operation — no camera session or [initialize] call required.
-  Future<ImageDetection?> detectInImage({required String imagePath});
+  /// [config] supplies the detection knobs the platform detector honours
+  /// (currently [ScannerConfig.detectionPolarity] and
+  /// [ScannerConfig.detectionThresholdOffset]); omit it for the defaults.
+  Future<ImageDetection?> detectInImage({
+    required String imagePath,
+    ScannerConfig config = const ScannerConfig(),
+  });
 }

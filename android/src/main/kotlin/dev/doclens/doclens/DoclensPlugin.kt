@@ -147,9 +147,15 @@ class DoclensPlugin :
         if (path == null) {
             result.error("capture_failed", "Invalid detectInImage args", null); return
         }
+        // Detection polarity travels with the call rather than the session:
+        // `detectInImage` is a pure file operation and works with no camera
+        // session bound. Absent args fall back to the paper-bright default.
+        val polarity = DetectionPolarity.from(call.argument<String>("detectionPolarity"))
+        val thresholdOffset = call.argument<Int>("detectionThresholdOffset")
+            ?: QuadDetector.DEFAULT_THRESHOLD_OFFSET
         backgroundExecutor.execute {
             try {
-                val out = QuadDetector.detectInFile(path)
+                val out = QuadDetector.detectInFile(path, polarity, thresholdOffset)
                 mainHandler.post { result.success(out) }
             } catch (e: Exception) {
                 mainHandler.post { result.error("capture_failed", e.message, null) }

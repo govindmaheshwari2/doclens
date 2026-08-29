@@ -251,6 +251,46 @@ cleared by `autoCaptureFocusTimeout` (2500 ms default), capture fires
 anyway so nobody gets stuck; the user can review and re-shoot. Set
 `enableSharpnessGate: false` for the old geometry-only behaviour.
 
+### Dark documents — detection polarity (Android)
+
+The Android detector segments each frame by thresholding around the frame's
+own mean brightness, and by default it keeps the **brighter** side: paper on
+a desk. A document *darker* than what it's lying on — a dark ID card, a
+saturated trading card, a glossy photo on a white desk — falls on the other
+side of that split, so the surface wins the search and the status sticks at
+`searching` / `noPaper`.
+
+Two knobs on `ScannerConfig` steer it:
+
+```dart
+const ScannerConfig(
+  // brighter (default) | darker | auto
+  detectionPolarity: DetectionPolarity.darker,
+  // luma bias past the frame mean, 0-128 (default 20)
+  detectionThresholdOffset: 20,
+);
+```
+
+`DetectionPolarity.auto` runs both polarities on every frame and keeps
+whichever candidate looks more document-like — solid, away from the frame
+edges, and large — which is the setting for a mixed pile where you don't
+know what the next item looks like. It roughly doubles per-frame detection
+cost; detection runs on a 256 px luma buffer, so that's still cheap, but
+measure it on low-end devices before raising `detectionThrottleHz` too.
+
+`detectionThresholdOffset` is how far past the frame mean a pixel has to be
+to count as document. Lower it (`8`–`12`) when the document barely separates
+from its background (an off-white receipt on a white desk); raise it
+(`30`–`45`) to keep shadows and specular highlights out of the document's
+component.
+
+Both settings also travel with `controller.detectInImage(path)`, so gallery
+imports segment the same way the live preview does.
+
+**iOS ignores both.** Detection there goes through Apple Vision, which is
+contrast-agnostic and finds dark documents natively — which is why the same
+card scans fine on iOS today.
+
 ## Continuous autofocus + tap-to-focus
 
 The native session runs continuous autofocus by default on both platforms (`.continuousAutoFocus` on iOS, `CONTROL_AF_MODE_CONTINUOUS_PICTURE` on Android), and on iOS it adds the near-distance hint that suits holding an A4 page at arm's length.
@@ -416,7 +456,7 @@ On iOS 15+ detection uses `VNDetectDocumentSegmentationRequest`, and falls back 
 
 Minimum API 21. `android.permission.CAMERA` merges into your manifest automatically.
 
-Detection uses CameraX with a pure-Kotlin Sobel pipeline on the preview path — no OpenCV, no bundled ML model. Capture uses `ImageCapture` plus `android.graphics.Matrix.setPolyToPoly`.
+Detection uses CameraX with a pure-Kotlin Sobel pipeline on the preview path — no OpenCV, no bundled ML model. Because segmentation is a luma threshold around the frame mean, which side of that mean the document sits on is a setting: see [Dark documents — detection polarity](#dark-documents--detection-polarity-android). Capture uses `ImageCapture` plus `android.graphics.Matrix.setPolyToPoly`.
 
 The native flow uses ML Kit's `GmsDocumentScanner`, delivered on demand by Google Play services. On a device without Play services it throws `ScannerUnavailableException` rather than crashing.
 
