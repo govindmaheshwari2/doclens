@@ -8,6 +8,10 @@ The detected document outline — a 4-corner quad — is streamed to Dart on eve
 
 - **Native edge detection** — Apple Vision on iOS, a pure-Kotlin CameraX
   pipeline on Android. The 4-corner quad is streamed to Dart every frame.
+- **Dark documents, not just paper** — `detectionPolarity` (`brighter` /
+  `darker` / `auto`) tells the Android detector which side of the frame's
+  brightness the document is on, so a dark ID card or a colored trading card
+  on a light desk detects like a sheet of paper.
 - **Three ways to scan** — a one-line drop-in screen, a fully branded
   custom UI on the package widget, or a hand-off to the OS-native scanner.
 - **Multi-page / batch scanning** — `DoclensMultiScreen` keeps the camera
@@ -289,7 +293,9 @@ imports segment the same way the live preview does.
 
 **iOS ignores both.** Detection there goes through Apple Vision, which is
 contrast-agnostic and finds dark documents natively — which is why the same
-card scans fine on iOS today.
+card scans fine on iOS today. The off-mobile fallback ignores them too: it
+has no edge detector at all, and hands you a manual crop instead (see
+[Platform support](#platform-support--mobile-desktop--web)).
 
 ## Continuous autofocus + tap-to-focus
 
