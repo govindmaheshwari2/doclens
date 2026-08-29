@@ -1,4 +1,4 @@
-## 0.0.8
+## 0.0.9
 
 **Web & desktop support — the package no longer hard-fails off mobile**
 
@@ -52,7 +52,7 @@
   supplied `ScannerConfig`, so those three fell back to their defaults on that
   entry point.
 
-**iOS packaging**
+## 0.0.8
 
 - Swift Package Manager support. CocoaPods still works — no migration needed.
 
