@@ -20,6 +20,7 @@ import 'status_classifier.dart';
 class DoclensController extends ChangeNotifier {
   DoclensController({ScannerConfig config = const ScannerConfig()})
       : _config = config,
+        _autoCaptureEnabled = config.enableAutoCapture,
         _flashMode = config.initialFlashMode {
     // `DoclensPlatform.instance` already defaults to a real
     // `MethodChannelDoclens`, so we don't force one here — tests inject a
@@ -33,6 +34,26 @@ class DoclensController extends ChangeNotifier {
 
   final ScannerConfig _config;
   ScannerConfig get config => _config;
+
+  bool _autoCaptureEnabled;
+
+  /// Whether auto-capture is armed. Seeded from
+  /// [ScannerConfig.enableAutoCapture].
+  ///
+  /// Setting this to `false` resets the stability and focus state and
+  /// abandons any confirmation window in flight.
+  bool get autoCapture => _autoCaptureEnabled;
+
+  set autoCapture(bool value) {
+    if (_autoCaptureEnabled == value) return;
+    _autoCaptureEnabled = value;
+    if (!value) {
+      _stability.reset();
+      _resetFocusEpisode();
+      _cancelConfirmation();
+    }
+    notifyListeners();
+  }
 
   late final StabilityTracker _stability;
   late final SharpnessTracker _sharpness;
@@ -141,7 +162,7 @@ class DoclensController extends ChangeNotifier {
       }
     }
 
-    if (_config.enableAutoCapture && !_capturing && !_inAutoCaptureCooldown()) {
+    if (_autoCaptureEnabled && !_capturing && !_inAutoCaptureCooldown()) {
       final stable = _stability.update(smoothed);
       // Auto-capture gating:
       //  (a) we have a quad,
