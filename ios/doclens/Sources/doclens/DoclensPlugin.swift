@@ -34,7 +34,6 @@ public class DoclensPlugin: NSObject, FlutterPlugin {
         case "dispose":
             session?.stop()
             session = nil
-            eventStream.reset()
             result(nil)
         case "capture":
             guard let session = session else {
@@ -235,12 +234,6 @@ final class QuadEventStream: NSObject, FlutterStreamHandler {
     func send(_ payload: [String: Any]) {
         DispatchQueue.main.async { [weak self] in
             self?.sink?(payload)
-        }
-    }
-
-    func reset() {
-        DispatchQueue.main.async { [weak self] in
-            self?.sink = nil
         }
     }
 }

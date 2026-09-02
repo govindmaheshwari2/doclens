@@ -98,13 +98,23 @@ class DoclensController extends ChangeNotifier {
   Future<void> initialize() async {
     _ensureNotDisposed();
     if (_initialized) return;
-    _textureId = await DoclensPlatform.instance.initialize(_config);
     _eventSub = DoclensPlatform.instance
         .detectionEvents()
         .listen(_onDetection, onError: (Object e) {
       // Detection errors are non-fatal; surface as status.
       _emitStatus(DetectionStatus.searching);
     });
+    try {
+      _textureId = await DoclensPlatform.instance.initialize(_config);
+    } catch (_) {
+      await _eventSub?.cancel();
+      _eventSub = null;
+      rethrow;
+    }
+    if (_disposed) {
+      await DoclensPlatform.instance.dispose();
+      return;
+    }
     _initialized = true;
     notifyListeners();
   }
