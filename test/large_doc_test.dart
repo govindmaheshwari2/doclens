@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:doclens/doclens.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -35,10 +34,10 @@ void main() {
     test('adjacent pieces step by the edge delta', () {
       final c = LargeDocCanvas();
       final root = c.addRoot('a.jpg');
-      final right =
-          c.addAdjacent(anchor: root, edge: LargeDocEdge.right, imagePath: 'b.jpg');
-      final down =
-          c.addAdjacent(anchor: root, edge: LargeDocEdge.bottom, imagePath: 'c.jpg');
+      final right = c.addAdjacent(
+          anchor: root, edge: LargeDocEdge.right, imagePath: 'b.jpg');
+      final down = c.addAdjacent(
+          anchor: root, edge: LargeDocEdge.bottom, imagePath: 'c.jpg');
       expect(right.gridPos, const Point(1, 0));
       expect(down.gridPos, const Point(0, 1));
     });
@@ -48,8 +47,8 @@ void main() {
       final root = c.addRoot('a.jpg');
       c.addAdjacent(anchor: root, edge: LargeDocEdge.right, imagePath: 'b.jpg');
       expect(
-        () =>
-            c.addAdjacent(anchor: root, edge: LargeDocEdge.right, imagePath: 'x.jpg'),
+        () => c.addAdjacent(
+            anchor: root, edge: LargeDocEdge.right, imagePath: 'x.jpg'),
         throwsStateError,
       );
     });
@@ -65,9 +64,10 @@ void main() {
     test('grid extent spans an L-shape', () {
       final c = LargeDocCanvas();
       final root = c.addRoot('a.jpg');
-      final right =
-          c.addAdjacent(anchor: root, edge: LargeDocEdge.right, imagePath: 'b.jpg');
-      c.addAdjacent(anchor: right, edge: LargeDocEdge.bottom, imagePath: 'c.jpg');
+      final right = c.addAdjacent(
+          anchor: root, edge: LargeDocEdge.right, imagePath: 'b.jpg');
+      c.addAdjacent(
+          anchor: right, edge: LargeDocEdge.bottom, imagePath: 'c.jpg');
       final ext = c.gridExtent();
       expect(ext.cols, 2);
       expect(ext.rows, 2);

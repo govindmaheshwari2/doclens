@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:doclens/doclens.dart';
 import 'package:doclens/src/method_channel_platform.dart';
 import 'package:flutter/services.dart';
@@ -45,7 +43,8 @@ void main() {
       expect(result.isNotEmpty, isTrue);
       expect(result.blocks, hasLength(2));
       expect(result.blocks.first.recognizedLanguage, 'en');
-      expect(result.blocks.first.boundingBox, const Rect.fromLTWH(10, 20, 100, 30));
+      expect(result.blocks.first.boundingBox,
+          const Rect.fromLTWH(10, 20, 100, 30));
       expect(result.lines, hasLength(2));
       expect(result.lines.first.confidence, 0.95);
       expect(result.lines.last.confidence, isNull);
@@ -97,7 +96,11 @@ void main() {
               'text': 'hi',
               'boundingBox': [0, 0, 50, 10],
               'lines': [
-                {'text': 'hi', 'boundingBox': [0, 0, 50, 10], 'confidence': 0.5},
+                {
+                  'text': 'hi',
+                  'boundingBox': [0, 0, 50, 10],
+                  'confidence': 0.5
+                },
               ],
             },
           ],

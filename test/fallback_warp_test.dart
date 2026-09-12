@@ -82,11 +82,11 @@ void main() {
         const Color(0xFFFF0000),
         const Color(0xFF0000FF),
       );
-      final rightHalf = Quad(
-        topLeft: const Offset(50, 0),
-        topRight: const Offset(100, 0),
-        bottomRight: const Offset(100, 100),
-        bottomLeft: const Offset(50, 100),
+      const rightHalf = Quad(
+        topLeft: Offset(50, 0),
+        topRight: Offset(100, 0),
+        bottomRight: Offset(100, 100),
+        bottomLeft: Offset(50, 100),
       );
       final out = await PerspectiveWarp.warpImage(src, rightHalf);
       // Output width tracks the selected edge length (~50).
@@ -98,11 +98,11 @@ void main() {
 
     test('output size derives from the longer opposing edge', () async {
       // A trapezoid whose bottom edge (80) is longer than the top (40).
-      final q = Quad(
-        topLeft: const Offset(30, 10),
-        topRight: const Offset(70, 10),
-        bottomRight: const Offset(90, 90),
-        bottomLeft: const Offset(10, 90),
+      const q = Quad(
+        topLeft: Offset(30, 10),
+        topRight: Offset(70, 10),
+        bottomRight: Offset(90, 90),
+        bottomLeft: Offset(10, 90),
       );
       final src = await solid(100, 100, const Color(0xFF00FF00));
       final out = await PerspectiveWarp.warpImage(src, q);

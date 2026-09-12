@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:doclens/doclens.dart';
 import 'package:doclens/src/method_channel_platform.dart';
 import 'package:flutter/services.dart';
