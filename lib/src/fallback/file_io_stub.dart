@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart';
+
 import '../models.dart';
 
 /// Whether path-based file access is available on this platform. Always
@@ -16,4 +18,12 @@ Future<Uint8List> readFileBytes(String path) =>
     throw const ScannerUnavailableException(_webMessage);
 
 Future<String> writeTempImage(Uint8List bytes, String extension) =>
+    throw const ScannerUnavailableException(_webMessage);
+
+/// Not available on web — throws [ScannerUnavailableException] when used.
+ImageProvider imageProviderForPath(String path) =>
+    throw const ScannerUnavailableException(_webMessage);
+
+/// Not available on web — throws [ScannerUnavailableException] when used.
+Future<void> deleteFile(String path) =>
     throw const ScannerUnavailableException(_webMessage);

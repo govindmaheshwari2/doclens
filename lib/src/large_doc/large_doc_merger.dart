@@ -1,7 +1,7 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import '../fallback/file_io.dart';
 import 'large_doc_canvas.dart';
 
 /// Stitches a finished [LargeDocCanvas] into one image.
@@ -107,14 +107,11 @@ class CanvasLargeDocMerger implements LargeDocMerger {
       throw StateError('Failed to encode the merged composite.');
     }
 
-    final path =
-        '${Directory.systemTemp.path}/doclens_tiles_${DateTime.now().microsecondsSinceEpoch}.png';
-    await File(path).writeAsBytes(bytes.buffer.asUint8List());
-    return path;
+    return writeTempImage(bytes.buffer.asUint8List(), 'png');
   }
 
   Future<ui.Image> _decode(String path) async {
-    final data = await File(path).readAsBytes();
+    final data = await readFileBytes(path);
     final codec = await ui.instantiateImageCodec(
       Uint8List.fromList(data),
     );

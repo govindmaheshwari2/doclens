@@ -12,6 +12,14 @@ class MethodChannelDoclens extends DoclensPlatform {
   static const _method = MethodChannel('doclens/methods');
   static const _events = EventChannel('doclens/events');
 
+  /// Dart-only platform registration entrypoint (used by the `linux`
+  /// federated entry in pubspec.yaml — no native code needed since
+  /// [DoclensPlatform]'s method-channel calls already fall back to pure
+  /// Dart when nothing answers on the other end).
+  static void registerWith() {
+    DoclensPlatform.instance = MethodChannelDoclens();
+  }
+
   Stream<DetectionEvent>? _detectionStream;
 
   /// Message used when a camera / native-only method is called on a platform
