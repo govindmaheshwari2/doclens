@@ -623,7 +623,6 @@ services, exactly like the OS-native scanner).
 ## What this package deliberately does NOT do
 
 - Multi-page PDF export — returns image paths; assemble a PDF yourself.
-- Web or desktop targets.
 
 ## More docs
 
