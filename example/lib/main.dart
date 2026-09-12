@@ -9,6 +9,7 @@ import 'ocr_sheet.dart';
 import 'styles/branded_style.dart';
 import 'styles/gallery_import_style.dart';
 import 'styles/native_os_style.dart';
+import 'styles/web_camera_style.dart';
 
 void main() => runApp(const ExampleApp());
 
@@ -250,6 +251,25 @@ class ShowroomHome extends StatelessWidget {
         requiresImportFlow: true,
         onTap: (ctx) => Navigator.of(ctx).push(
           MaterialPageRoute<void>(builder: (_) => const GalleryImportScanner()),
+        ),
+      ),
+      _StyleEntry(
+        index: '07',
+        eyebrow: 'WEB / DESKTOP',
+        title: 'Camera or upload',
+        subtitle: 'Uses the device camera where available (web, mobile '
+            'browsers); falls back to uploading a photo on platforms with '
+            'no camera plugin (most desktop OSes). Crop runs entirely on '
+            'decoded bytes, so it works on web too.',
+        tags: const [
+          'ImagePicker.camera',
+          'bytes-based crop',
+          'PerspectiveWarp.warpBytes()',
+        ],
+        accent: _kInkBlue,
+        preview: const _GalleryPreview(),
+        onTap: (ctx) => Navigator.of(ctx).push(
+          MaterialPageRoute<void>(builder: (_) => const WebCameraScanner()),
         ),
       ),
     ];
@@ -1667,7 +1687,8 @@ class _ReturnedBatchState extends State<_ReturnedBatch> {
                         borderRadius: BorderRadius.circular(9),
                         border: Border.all(color: _kRule),
                       ),
-                      child: const Icon(Icons.arrow_back, color: _kInk, size: 18),
+                      child:
+                          const Icon(Icons.arrow_back, color: _kInk, size: 18),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -1699,8 +1720,7 @@ class _ReturnedBatchState extends State<_ReturnedBatch> {
             Expanded(
               child: GridView.builder(
                 padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: 12,
                   mainAxisSpacing: 12,
@@ -1746,8 +1766,8 @@ class _ReturnedBatchState extends State<_ReturnedBatch> {
                           Expanded(
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(4),
-                              child: Image.file(File(path), fit: BoxFit.cover,
-                                  width: double.infinity),
+                              child: Image.file(File(path),
+                                  fit: BoxFit.cover, width: double.infinity),
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -2025,4 +2045,3 @@ class _OverlayActionButton extends StatelessWidget {
 // =====================================================================
 //  OCR — extract text from a scan (recognizeText)
 // =====================================================================
-

@@ -1,3 +1,13 @@
+## 0.0.11
+
+- Declared `web`, `macos`, and `windows` as supported platforms
+  (`flutter.plugin.platforms` in `pubspec.yaml`, registering the existing
+  `MethodChannelDoclens` fallback path on web and the native `DoclensPlugin`
+  on macOS/Windows). No behavior change on web — the pure-Dart warp/rotate/detect
+  fallback and the `ScannerUnavailableException` messaging already worked
+  there; this just stops `flutter build web` / pub.dev from warning that the
+  plugin doesn't support these platforms.
+
 ## 0.0.10
 
 - New `DoclensController.autoCapture` getter/setter — toggle auto-capture live
