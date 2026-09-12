@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../controller.dart';
+import '../fallback/file_io.dart';
 import '../models.dart';
 import '../ocr.dart';
 import '../quad.dart';
@@ -69,7 +68,7 @@ TextStyle _serif({
 Future<void> _deleteFileQuietly(String? path) async {
   if (path == null || path.isEmpty) return;
   try {
-    await File(path).delete();
+    await deleteFile(path);
   } catch (_) {}
 }
 
@@ -1959,7 +1958,7 @@ class _PageThumb extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(5),
-            child: Image.file(File(path), fit: BoxFit.cover),
+            child: Image(image: imageProviderForPath(path), fit: BoxFit.cover),
           ),
           Positioned(
             left: 0,
@@ -2279,8 +2278,8 @@ class _ReviewImageState extends State<_ReviewImage> {
                   child: Center(
                     child: Stack(
                       children: [
-                        Image.file(
-                          File(widget.path),
+                        Image(
+                          image: imageProviderForPath(widget.path),
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.center,
                         ),
@@ -2844,8 +2843,8 @@ class _GalleryRow extends StatelessWidget {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
-              child: Image.file(
-                File(path),
+              child: Image(
+                image: imageProviderForPath(path),
                 width: 52,
                 height: 68,
                 fit: BoxFit.cover,

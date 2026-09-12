@@ -1,3 +1,12 @@
+## 0.0.12
+
+- Declared `linux` as a supported platform via `dartPluginClass` (no native
+  code needed — same `MethodChannelDoclens` fallback path web already uses).
+- Fixed WASM compilation: three widgets and `CanvasLargeDocMerger` imported
+  `dart:io` unconditionally for `File`/`Image.file`, which broke `flutter
+  build web --wasm`. Routed them through the existing conditional
+  `fallback/file_io.dart` (io/stub split) instead.
+
 ## 0.0.11
 
 - Declared `web`, `macos`, and `windows` as supported platforms

@@ -1,9 +1,18 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart';
+
 /// Whether path-based file access is available on this platform. Always
 /// `true` where `dart:io` exists (mobile + desktop).
 const bool fileIoAvailable = true;
+
+/// An [ImageProvider] for a path on disk. Mobile/desktop only — see
+/// [fileIoAvailable].
+ImageProvider imageProviderForPath(String path) => FileImage(File(path));
+
+/// Deletes the file at [path], ignoring the result.
+Future<void> deleteFile(String path) => File(path).delete();
 
 Future<Uint8List> readFileBytes(String path) => File(path).readAsBytes();
 

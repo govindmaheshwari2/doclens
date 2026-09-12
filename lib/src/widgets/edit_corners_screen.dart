@@ -1,9 +1,9 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../fallback/file_io.dart';
 import '../quad.dart';
 
 typedef CornerHandleBuilder = Widget Function(BuildContext context);
@@ -163,7 +163,7 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
   }
 
   void _decodeImage() {
-    final provider = FileImage(File(widget.imagePath));
+    final provider = imageProviderForPath(widget.imagePath);
     final stream = provider.resolve(const ImageConfiguration());
     final listener = ImageStreamListener((info, _) {
       if (!mounted) {
@@ -252,7 +252,10 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
                   top: fit.dstOffset.dy,
                   width: fit.dstSize.width,
                   height: fit.dstSize.height,
-                  child: Image.file(File(widget.imagePath), fit: BoxFit.fill),
+                  child: Image(
+                    image: imageProviderForPath(widget.imagePath),
+                    fit: BoxFit.fill,
+                  ),
                 ),
                 Positioned.fill(
                   child: CustomPaint(

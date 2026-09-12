@@ -3,6 +3,7 @@
 library;
 
 export 'src/controller.dart';
+export 'src/method_channel_platform.dart' show MethodChannelDoclens;
 export 'src/fallback/image_enhance.dart' show ImageEnhance;
 export 'src/fallback/perspective_warp.dart' show PerspectiveWarp;
 export 'src/models.dart';

@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../controller.dart';
+import '../fallback/file_io.dart';
 import '../models.dart';
 import '../quad.dart';
 import '../large_doc/large_doc_aligner.dart';
@@ -450,8 +450,8 @@ class _GhostStrip extends StatelessWidget {
                         alignment: sliceAlign,
                         maxWidth: box.width,
                         maxHeight: box.height,
-                        child: Image.file(
-                          File(imagePath),
+                        child: Image(
+                          image: imageProviderForPath(imagePath),
                           fit: BoxFit.cover,
                           width: box.width,
                           height: box.height,
@@ -546,7 +546,7 @@ class _CompositeBoard extends StatelessWidget {
             height: cell,
             child: Padding(
               padding: const EdgeInsets.all(1),
-              child: Image.file(File(t.imagePath), fit: BoxFit.cover),
+              child: Image(image: imageProviderForPath(t.imagePath), fit: BoxFit.cover),
             ),
           ));
           for (final edge in canvas.openEdgesOf(t)) {
@@ -626,7 +626,7 @@ class _Miniview extends StatelessWidget {
                 height: cell,
                 child: Padding(
                   padding: const EdgeInsets.all(0.5),
-                  child: Image.file(File(t.imagePath), fit: BoxFit.cover),
+                  child: Image(image: imageProviderForPath(t.imagePath), fit: BoxFit.cover),
                 ),
               ),
           ],
