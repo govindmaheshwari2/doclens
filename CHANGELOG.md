@@ -1,11 +1,12 @@
 ## 0.0.11
 
-- Declared `web` as a supported platform (`flutter.plugin.platforms.web` in
-  `pubspec.yaml`, registering the existing `MethodChannelDoclens` fallback
-  path). No behavior change — the pure-Dart warp/rotate/detect fallback and
-  the `ScannerUnavailableException` messaging already worked on web; this
-  just stops `flutter build web` / pub.dev from warning that the plugin
-  doesn't support web.
+- Declared `web`, `macos`, and `windows` as supported platforms
+  (`flutter.plugin.platforms` in `pubspec.yaml`, registering the existing
+  `MethodChannelDoclens` fallback path on web and the native `DoclensPlugin`
+  on macOS/Windows). No behavior change on web — the pure-Dart warp/rotate/detect
+  fallback and the `ScannerUnavailableException` messaging already worked
+  there; this just stops `flutter build web` / pub.dev from warning that the
+  plugin doesn't support these platforms.
 
 ## 0.0.10
 
