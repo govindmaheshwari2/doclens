@@ -1,3 +1,14 @@
+## 0.0.10
+
+- New `DoclensController.autoCapture` getter/setter — toggle auto-capture live
+  instead of rebuilding the controller (was locked to
+  `ScannerConfig.enableAutoCapture` at construction, forcing a dispose +
+  reinit and ~400ms black preview per toggle). @bohdan-ilkiv-plant-in
+- Fixed: detection stream could go silent if `dispose()` landed mid-`initialize()`
+  — now subscribes to the stream before starting the native session. iOS also
+  dropped an unconditional `eventStream.reset()` in `dispose` that could kill
+  a sink an incoming controller was already using. @bohdan-ilkiv-plant-in
+
 ## 0.0.9
 
 **Web & desktop support — the package no longer hard-fails off mobile**
