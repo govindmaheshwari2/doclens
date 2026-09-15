@@ -30,11 +30,11 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
-  url_launcher: ^6.2.5
+  url_launcher: ^6.3.2
 
   # Used by the "Gallery import" showroom entry to pick a photo from the
   # device gallery before running the detect → edit → warp pipeline on it.
-  image_picker: ^1.1.2
+  image_picker: ^1.2.3
   camera: ^0.12.1
 
 dev_dependencies:
