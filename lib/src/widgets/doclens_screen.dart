@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../controller.dart';
 import '../fallback/file_io.dart';
@@ -1922,7 +1922,7 @@ class _PageThumbRail extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         reverse: true,
         itemCount: pages.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
           final page = pages[pages.length - 1 - i];
           final index = pages.length - 1 - i;

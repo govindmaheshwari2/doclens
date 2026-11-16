@@ -1,3 +1,14 @@
+## 0.1.0
+
+- **Breaking:** requires Flutter >=3.47.0 / Dart ^3.13.0. Widgets now import
+  `package:material_ui` (Material was split out of `flutter/material.dart`).
+- Android: `compileSdk` 36. Example: Gradle 9.5.0, AGP 9.3.1, built-in Kotlin
+  (KGP 2.4.20).
+- iOS `Package.swift` now depends on `FlutterFramework` (SwiftPM). macOS
+  privacy manifest declared as a resource in SwiftPM and CocoaPods; removed
+  stray duplicate iOS privacy manifest.
+- Example iOS app migrated from CocoaPods to Swift Package Manager.
+
 ## 0.0.12
 
 - Declared `linux` as a supported platform via `dartPluginClass` (no native

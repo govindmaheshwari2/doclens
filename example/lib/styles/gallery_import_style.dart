@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:doclens/doclens.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../ocr_sheet.dart';

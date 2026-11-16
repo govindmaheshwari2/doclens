@@ -1,5 +1,4 @@
 import 'package:doclens/doclens.dart';
-import 'package:doclens/src/method_channel_platform.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
