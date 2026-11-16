@@ -10,15 +10,15 @@ let package = Package(
     products: [
         .library(name: "doclens", targets: ["doclens"])
     ],
-    dependencies: [],
+    dependencies: [
+        .package(name: "FlutterFramework", path: "../FlutterFramework")
+    ],
     targets: [
         .target(
             name: "doclens",
-            // ponytail: no FlutterFramework package dep — that path only exists on
-            // Flutter 3.44+, and pubspec allows >=3.16.0. Flutter injects the Flutter
-            // module either way; the 3.44 build only warns. Add the dep once the
-            // pubspec floor moves to 3.44.
-            dependencies: [],
+            dependencies: [
+                .product(name: "FlutterFramework", package: "FlutterFramework")
+            ],
             resources: [
                 .process("Resources")
             ]

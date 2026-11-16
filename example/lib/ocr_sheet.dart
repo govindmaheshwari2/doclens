@@ -1,5 +1,5 @@
 import 'package:doclens/doclens.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 // =====================================================================
@@ -267,7 +267,7 @@ class _OcrLineList extends StatelessWidget {
           shrinkWrap: true,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           itemCount: ocr.lines.length,
-          separatorBuilder: (_, __) => Divider(height: 14, color: p.border),
+          separatorBuilder: (_, _) => Divider(height: 14, color: p.border),
           itemBuilder: (context, i) {
             final line = ocr.lines[i];
             final conf = line.confidence;

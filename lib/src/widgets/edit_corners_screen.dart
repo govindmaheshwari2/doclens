@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../fallback/file_io.dart';
 import '../quad.dart';
@@ -171,7 +171,7 @@ class _EditCornersScreenState extends State<EditCornersScreen> {
         return;
       }
       setState(() => _sourceImage = info.image);
-    }, onError: (_, __) {
+    }, onError: (_, _) {
       // Loupe is a non-critical enhancement; fail silently and let editing
       // continue without it.
     });

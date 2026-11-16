@@ -46,9 +46,9 @@ enum LargeDocCaptureOutcome {
 /// final stitch are injected, keeping the state machine unit-testable.
 class LargeDocSession extends ChangeNotifier {
   LargeDocSession({
-    LargeDocAligner aligner = const ManualPlacementAligner(),
+    this._aligner = const ManualPlacementAligner(),
     required this.merger,
-  }) : _aligner = aligner;
+  });
 
   final LargeDocAligner _aligner;
 
